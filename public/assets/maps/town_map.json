@@ -72,7 +72,7 @@
  "tilesets":[
         {
          "firstgid":1,
-         "source":"..\/tilesets\/roguelikeSheet_transparent.tsx"
+         "source":"..\/tilesets\/OneValley.tsx"
         }],
  "tilewidth":16,
  "type":"map",
