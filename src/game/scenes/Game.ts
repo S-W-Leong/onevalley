@@ -3,6 +3,11 @@ import { EventBus } from '../EventBus';
 
 export class Game extends Scene
 {
+    // Map properties
+    private map!: Phaser.Tilemaps.Tilemap;
+    private tileset!: Phaser.Tilemaps.Tileset;
+    private collisionLayers: Phaser.Tilemaps.TilemapLayer[] = [];
+    
     // Player-related properties
     private player!: Phaser.Physics.Arcade.Sprite;
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -28,18 +33,23 @@ export class Game extends Scene
     {
         this.load.setPath('assets');
         
+        // Load tileset and farm map
+        this.load.image('tileset', 'tilesets/roguelikeSheet_transparent.png');
+        this.load.tilemapTiledJSON('farm_map', 'maps/farm_map.json');
+        
+        // Load player sprite
         this.load.spritesheet('player', 'sprites/player/player_walk.png', {
             frameWidth: 125,
             frameHeight: 250
         });
-        
-        this.load.image('background', 'bg.png');
     }
 
     create ()
     {
-        this.add.image(512, 384, 'background');
+        // Create the farm map
+        this.createMap();
         
+        // Create player and controls
         this.createPlayerAnimations();
         this.createPlayer();
         this.setupInputs();
@@ -51,6 +61,36 @@ export class Game extends Scene
     update ()
     {
         this.handlePlayerMovement();
+    }
+
+    private createMap(): void
+    {
+        // Create the tilemap
+        this.map = this.make.tilemap({ key: 'farm_map' });
+        
+        // Add the tileset (the name 'Roguelike' must match the tileset name in the JSON)
+        this.tileset = this.map.addTilesetImage('Roguelike', 'tileset')!;
+        
+        // Create layers in order (bottom to top)
+        const groundLayer = this.map.createLayer('Ground', this.tileset, 0, 0);
+        const farmingLayer = this.map.createLayer('Farming Dirt + Water + Routes', this.tileset, 0, 0);
+        const decoLayer = this.map.createLayer('Deco', this.tileset, 0, 0);
+        const treesLayer = this.map.createLayer('Trees', this.tileset, 0, 0);
+        const houseBodyLayer = this.map.createLayer('House\'s Body', this.tileset, 0, 0);
+        const houseRoofLayer = this.map.createLayer('House\'s Roof', this.tileset, 0, 0);
+        const houseObjLayer = this.map.createLayer('House\'s Obj', this.tileset, 0, 0);
+        
+        // Set collision for trees and house layers (player can't walk through them)
+        treesLayer?.setCollisionByExclusion([-1]);
+        houseBodyLayer?.setCollisionByExclusion([-1]);
+        houseRoofLayer?.setCollisionByExclusion([-1]);
+        houseObjLayer?.setCollisionByExclusion([-1]);
+        
+        // Store collision layers for later use with player (filter out nulls)
+        this.collisionLayers = [treesLayer, houseBodyLayer, houseRoofLayer, houseObjLayer].filter(layer => layer !== null) as Phaser.Tilemaps.TilemapLayer[];
+        
+        // Set world bounds to match map size (50 tiles * 16 pixels = 800x800)
+        this.physics.world.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
     }
 
     private createPlayerAnimations(): void
@@ -146,12 +186,18 @@ export class Game extends Scene
 
     private createPlayer(): void
     {
-        this.player = this.physics.add.sprite(512, 384, 'player', 0);
+        // Spawn player at center of map (400, 400 for 800x800 farm map)
+        this.player = this.physics.add.sprite(400, 400, 'player', 0);
         this.player.setScale(0.30);
         this.player.setCollideWorldBounds(true);
         this.player.body!.setSize(this.player.width * 0.6, this.player.height * 0.5);
         this.player.body!.setOffset(this.player.width * 0.2, this.player.height * 0.4);
         this.player.play('idle-down');
+        
+        // Add collision with map layers (trees, houses)
+        this.collisionLayers.forEach(layer => {
+            this.physics.add.collider(this.player, layer);
+        });
     }    private setupInputs(): void
     {
         this.cursors = this.input.keyboard!.createCursorKeys();
@@ -167,7 +213,37 @@ export class Game extends Scene
     private setupCamera(): void
     {
         this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-        this.cameras.main.setBounds(0, 0, 1024, 768);
+        // Set camera bounds to match map size
+        this.cameras.main.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
+        // Set initial zoom based on screen size
+        this.updateCameraZoom();
+
+        // Listen for resize events
+        this.scale.on('resize', this.handleResize, this);
+    }
+
+    private updateCameraZoom(): void
+    {
+        const gameWidth = this.scale.gameSize.width;
+        const gameHeight = this.scale.gameSize.height;
+
+        // Calculate zoom to fit the map nicely on screen
+        // Use a base zoom that works well for the map size
+        const baseZoom = Math.min(gameWidth / 800, gameHeight / 600);
+
+        // Ensure zoom doesn't go below 1 or above 3
+        const zoom = Phaser.Math.Clamp(baseZoom, 1, 3);
+
+        this.cameras.main.setZoom(zoom);
+    }
+
+    private handleResize(gameSize: Phaser.Structs.Size): void
+    {
+        // Update camera bounds to match new game size
+        this.cameras.main.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
+
+        // Update zoom based on new screen size
+        this.updateCameraZoom();
     }
 
     private handlePlayerMovement(): void
@@ -224,5 +300,11 @@ export class Game extends Scene
         } else {
             this.player.play(`walk-${this.currentDirection}`, true);
         }
+    }
+
+    destroy(): void
+    {
+        // Clean up resize event listener
+        this.scale.off('resize', this.handleResize, this);
     }
 }
