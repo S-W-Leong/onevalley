@@ -1,7 +1,7 @@
 import { Scene } from 'phaser';
 import { EventBus } from '../EventBus';
 
-export class Game extends Scene
+export class FarmScene extends Scene
 {
     // Player-related properties
     private player!: Phaser.Physics.Arcade.Sprite;
@@ -21,7 +21,7 @@ export class Game extends Scene
 
     constructor ()
     {
-        super('Game');
+        super('FarmScene');
     }
 
     preload ()
