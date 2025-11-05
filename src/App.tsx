@@ -7,7 +7,7 @@ function App() {
     const [gameStarted, setGameStarted] = useState(false);
     const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
 
-    const phaserRef = useRef<IRefPhaserGame | null>(null);
+    const phaserRef = useRef(null);
 
     const handleStartGame = () => {
         setGameStarted(true);
@@ -20,7 +20,7 @@ function App() {
                     <p>Connect your wallet to start your adventure!</p>
                     <ConnectModal
                         trigger={
-                            <button className="button">
+                            <button className="retroButton">
                                 Connect Wallet
                             </button>
                         }
@@ -34,7 +34,9 @@ function App() {
                 <div className="main-menu flex flex-col items-center justify-center">
                     <h1>Wallet Connected!</h1>
                     <p>Address: {currentAccount.address}</p>
-                    <button className="button" onClick={handleStartGame}>Start Game</button>
+                    <button className="retroButton" onClick={handleStartGame}>
+                        Start Game
+                    </button>
                 </div>
             )}
         </div>
