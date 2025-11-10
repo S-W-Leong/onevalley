@@ -34,7 +34,7 @@ export class FarmScene extends Scene
         this.load.setPath('assets');
         
         // Load tileset and farm map
-        this.load.image('tileset', 'tilesets/roguelikeSheet_transparent.png');
+        this.load.image('tileset', 'tilesets/OneValley.png');
         this.load.tilemapTiledJSON('farm_map', 'maps/farm_map.json');
         
         // Load player sprite
@@ -69,7 +69,7 @@ export class FarmScene extends Scene
         this.map = this.make.tilemap({ key: 'farm_map' });
         
         // Add the tileset (the name 'Roguelike' must match the tileset name in the JSON)
-        this.tileset = this.map.addTilesetImage('Roguelike', 'tileset')!;
+        this.tileset = this.map.addTilesetImage('OneValley', 'tileset')!;
         
         // Create layers in order (bottom to top)
         const groundLayer = this.map.createLayer('Ground', this.tileset, 0, 0);
