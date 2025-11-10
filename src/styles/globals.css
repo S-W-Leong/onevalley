@@ -47,12 +47,16 @@
 
 html,
 body,
-#app {
-  height: 100%;
+#__next {
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  cursor: url('/assets/OneValleyCursor32.png'), auto !important;
 }
 
 .spritePosition {
@@ -161,16 +165,13 @@ body,
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
+
   body {
     @apply bg-[black] text-foreground;
   }

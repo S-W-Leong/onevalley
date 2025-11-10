@@ -7,6 +7,8 @@ export class FarmScene extends Scene
     private map!: Phaser.Tilemaps.Tilemap;
     private tileset!: Phaser.Tilemaps.Tileset;
     private collisionLayers: Phaser.Tilemaps.TilemapLayer[] = [];
+    private farmingLayer!: Phaser.Tilemaps.TilemapLayer;
+    private cropsLayer!: Phaser.Tilemaps.TilemapLayer;
     
     // Player-related properties
     private player!: Phaser.Physics.Arcade.Sprite;
@@ -18,11 +20,21 @@ export class FarmScene extends Scene
         right: Phaser.Input.Keyboard.Key;
     };
     private shiftKey!: Phaser.Input.Keyboard.Key;
+    private interactKey!: Phaser.Input.Keyboard.Key;
+    private escKey!: Phaser.Input.Keyboard.Key;
+
+    // Particle properties
+    private particleEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
+    private windTimer!: Phaser.Time.TimerEvent;
     
+    // Farming properties
+    private farmableTileIndices: Set<number> = new Set([521, 522, 523, 578, 579, 580, 635, 636, 637]);
+
     // Player state
     private playerSpeed: number = 150;
     private playerRunSpeed: number = 250;
     private currentDirection: string = 'down';
+    private initialZoom: number = 4;
 
     constructor ()
     {
@@ -42,6 +54,9 @@ export class FarmScene extends Scene
             frameWidth: 125,
             frameHeight: 250
         });
+
+        // Load particle image
+        this.load.image('firefly', 'firefly.png');
     }
 
     create ()
@@ -55,6 +70,12 @@ export class FarmScene extends Scene
         this.setupInputs();
         this.setupCamera();
         
+        // Create particles
+        this.createParticles();
+
+        // Listen for interaction
+        this.handleInteraction();
+
         EventBus.emit('current-scene-ready', this);
     }
 
@@ -65,122 +86,106 @@ export class FarmScene extends Scene
 
     private createMap(): void
     {
-        // Create the tilemap
         this.map = this.make.tilemap({ key: 'farm_map' });
-        
-        // Add the tileset (the name 'Roguelike' must match the tileset name in the JSON)
         this.tileset = this.map.addTilesetImage('OneValley', 'tileset')!;
-        
-        // Create layers in order (bottom to top)
-        const groundLayer = this.map.createLayer('Ground', this.tileset, 0, 0);
-        const farmingLayer = this.map.createLayer('Farming Dirt + Water + Routes', this.tileset, 0, 0);
-        const decoLayer = this.map.createLayer('Deco', this.tileset, 0, 0);
-        const treesLayer = this.map.createLayer('Trees', this.tileset, 0, 0);
-        const houseBodyLayer = this.map.createLayer('House\'s Body', this.tileset, 0, 0);
-        const houseRoofLayer = this.map.createLayer('House\'s Roof', this.tileset, 0, 0);
-        const houseObjLayer = this.map.createLayer('House\'s Obj', this.tileset, 0, 0);
-        
-        // Set collision for trees and house layers (player can't walk through them)
-        treesLayer?.setCollisionByExclusion([-1]);
-        houseBodyLayer?.setCollisionByExclusion([-1]);
-        houseRoofLayer?.setCollisionByExclusion([-1]);
-        houseObjLayer?.setCollisionByExclusion([-1]);
-        
-        // Store collision layers for later use with player (filter out nulls)
-        this.collisionLayers = [treesLayer, houseBodyLayer, houseRoofLayer, houseObjLayer].filter(layer => layer !== null) as Phaser.Tilemaps.TilemapLayer[];
-        
-        // Set world bounds to match map size (50 tiles * 16 pixels = 800x800)
+        this.collisionLayers = [];
+
+        const createLayer = (
+            name: string,
+            depth: number,
+            collides: boolean = false
+        ): Phaser.Tilemaps.TilemapLayer | null => {
+            const layer = this.map.createLayer(name, this.tileset, 0, 0);
+            layer?.setDepth(depth);
+
+            if (collides && layer) {
+                layer.setCollisionByExclusion([-1]);
+                this.collisionLayers.push(layer);
+            }
+
+            return layer;
+        };
+
+        createLayer('Ground', -10);
+        this.farmingLayer = createLayer('Farming Dirt + Water + Routes', -5)!;
+        this.cropsLayer = this.map.createBlankLayer('Crops', this.tileset, 0, 0)!;
+        this.cropsLayer.setDepth(-4);
+
+    createLayer('Deco', 10);
+    createLayer('House', 15, false);
+    createLayer('Market', 18, false);
+
+        ['Trees A', 'Trees B', 'Trees C', 'Trees D', 'Trees E']
+            .forEach((name, index) => createLayer(name, 20 + index, false));
+
         this.physics.world.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
+    }
+
+    private createParticles(): void {
+        this.particleEmitter = this.add.particles(
+            0, 0, // x, y coordinates (will be overridden by emitZone)
+            'firefly',
+            {
+                x: { min: 0, max: this.map.widthInPixels },
+                y: { min: 0, max: this.map.heightInPixels },
+                lifespan: 5000,
+                speed: { min: 3, max: 15 },
+                scale: { start: 0.1, end: 0 },
+                alpha: { start: 1, end: 0 },
+                quantity: 3,
+                blendMode: 'ADD'
+            }
+        );
+
+        this.windTimer = this.time.addEvent({
+            delay: 5000, // 5 seconds
+            callback: this.updateWind,
+            callbackScope: this,
+            loop: true
+        });
+    }
+
+    private updateWind(): void {
+        const windX = Phaser.Math.Between(-20, 20);
+        const windY = Phaser.Math.Between(-20, 20);
+        
+        // Correct way to set acceleration in recent Phaser 3 versions
+        this.particleEmitter.accelerationX = windX;
+        this.particleEmitter.accelerationY = windY;
     }
 
     private createPlayerAnimations(): void
     {
-        // DOWN animations (frames 0, 3)
-        this.anims.create({
-            key: 'idle-down',
-            frames: [{ key: 'player', frame: 0 }],
-            frameRate: 1,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'walk-down',
-            frames: [{ key: 'player', frame: 0 }, { key: 'player', frame: 3 }],
-            frameRate: 6,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'run-down',
-            frames: [{ key: 'player', frame: 0 }, { key: 'player', frame: 3 }],
-            frameRate: 10,
-            repeat: -1
-        });
-        
-        // UP animations (frames 1, 5)
-        this.anims.create({
-            key: 'idle-up',
-            frames: [{ key: 'player', frame: 1 }],
-            frameRate: 1,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'walk-up',
-            frames: [{ key: 'player', frame: 1 }, { key: 'player', frame: 5 }],
-            frameRate: 6,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'run-up',
-            frames: [{ key: 'player', frame: 1 }, { key: 'player', frame: 5 }],
-            frameRate: 10,
-            repeat: -1
-        });
-        
-        // LEFT animations (mirrored from right frames 2, 6)
-        this.anims.create({
-            key: 'idle-left',
-            frames: [{ key: 'player', frame: 2 }],
-            frameRate: 1,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'walk-left',
-            frames: [{ key: 'player', frame: 2 }, { key: 'player', frame: 6 }],
-            frameRate: 6,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'run-left',
-            frames: [{ key: 'player', frame: 2 }, { key: 'player', frame: 6 }],
-            frameRate: 10,
-            repeat: -1
-        });
-        
-        // RIGHT animations (frames 2, 6)
-        this.anims.create({
-            key: 'idle-right',
-            frames: [{ key: 'player', frame: 2 }],
-            frameRate: 1,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'walk-right',
-            frames: [{ key: 'player', frame: 2 }, { key: 'player', frame: 6 }],
-            frameRate: 6,
-            repeat: -1
-        });
-        
-        this.anims.create({
-            key: 'run-right',
-            frames: [{ key: 'player', frame: 2 }, { key: 'player', frame: 6 }],
-            frameRate: 10,
-            repeat: -1
+        const directionConfig: Record<string, { idle: number; move: number[] }> = {
+            down: { idle: 0, move: [0, 3] },
+            up: { idle: 1, move: [1, 5] },
+            right: { idle: 2, move: [2, 6] },
+            left: { idle: 2, move: [2, 6] }
+        };
+
+        Object.entries(directionConfig).forEach(([direction, frames]) => {
+            this.anims.create({
+                key: `idle-${direction}`,
+                frames: [{ key: 'player', frame: frames.idle }],
+                frameRate: 1,
+                repeat: -1
+            });
+
+            const mappedFrames = frames.move.map(frame => ({ key: 'player', frame }));
+
+            this.anims.create({
+                key: `walk-${direction}`,
+                frames: mappedFrames,
+                frameRate: 6,
+                repeat: -1
+            });
+
+            this.anims.create({
+                key: `run-${direction}`,
+                frames: mappedFrames,
+                frameRate: 10,
+                repeat: -1
+            });
         });
     }
 
@@ -190,15 +195,19 @@ export class FarmScene extends Scene
         this.player = this.physics.add.sprite(400, 400, 'player', 0);
         this.player.setScale(0.30);
         this.player.setCollideWorldBounds(true);
-        this.player.body!.setSize(this.player.width * 0.6, this.player.height * 0.5);
-        this.player.body!.setOffset(this.player.width * 0.2, this.player.height * 0.4);
+        const body = this.player.body as Phaser.Physics.Arcade.Body;
+        body.setSize(this.player.width * 0.6, this.player.height * 0.5);
+        body.setOffset(this.player.width * 0.2, this.player.height * 0.4);
         this.player.play('idle-down');
+        this.player.setDepth(1000);
         
         // Add collision with map layers (trees, houses)
         this.collisionLayers.forEach(layer => {
             this.physics.add.collider(this.player, layer);
         });
-    }    private setupInputs(): void
+    }
+
+    private setupInputs(): void
     {
         this.cursors = this.input.keyboard!.createCursorKeys();
         this.wasd = {
@@ -208,6 +217,10 @@ export class FarmScene extends Scene
             right: this.input.keyboard!.addKey('D')
         };
         this.shiftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+        this.interactKey = this.input.keyboard!.addKey('E');
+        this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+        
+        this.escKey.on('down', () => this.exitFarm());
     }
 
     private setupCamera(): void
@@ -227,12 +240,11 @@ export class FarmScene extends Scene
         const gameWidth = this.scale.gameSize.width;
         const gameHeight = this.scale.gameSize.height;
 
-        // Calculate zoom to fit the map nicely on screen
-        // Use a base zoom that works well for the map size
-        const baseZoom = Math.min(gameWidth / 800, gameHeight / 600);
+        // Use the initialZoom property as the base zoom
+        const baseZoom = this.initialZoom;
 
         // Ensure zoom doesn't go below 1 or above 3
-        const zoom = Phaser.Math.Clamp(baseZoom, 1, 3);
+        const zoom = Phaser.Math.Clamp(baseZoom, 1, 100);
 
         this.cameras.main.setZoom(zoom);
     }
@@ -253,39 +265,61 @@ export class FarmScene extends Scene
         const up = this.cursors.up.isDown || this.wasd.up.isDown;
         const down = this.cursors.down.isDown || this.wasd.down.isDown;
         const isRunning = this.shiftKey.isDown;
-        
         const speed = isRunning ? this.playerRunSpeed : this.playerSpeed;
-        this.player.setVelocity(0, 0);
-        
-        if (left) {
-            this.player.setVelocityX(-speed);
+
+        const velocity = new Phaser.Math.Vector2(
+            Number(right) - Number(left),
+            Number(down) - Number(up)
+        );
+
+        if (velocity.x < 0) {
             this.currentDirection = 'left';
-        } else if (right) {
-            this.player.setVelocityX(speed);
+        } else if (velocity.x > 0) {
             this.currentDirection = 'right';
         }
-        
-        if (up) {
-            this.player.setVelocityY(-speed);
+
+        if (velocity.y < 0) {
             this.currentDirection = 'up';
-        } else if (down) {
-            this.player.setVelocityY(speed);
+        } else if (velocity.y > 0) {
             this.currentDirection = 'down';
         }
-        
-        if (this.player.body!.velocity.x !== 0 && this.player.body!.velocity.y !== 0) {
-            this.player.setVelocity(
-                this.player.body!.velocity.x * 0.7071,
-                this.player.body!.velocity.y * 0.7071
-            );
+
+        if (velocity.lengthSq() > 0) {
+            velocity.normalize().scale(speed);
+            this.player.setVelocity(velocity.x, velocity.y);
+        } else {
+            this.player.setVelocity(0, 0);
         }
-        
+
         this.updatePlayerAnimation(isRunning);
+    }
+
+    private handleInteraction(): void {
+        this.interactKey.on('down', () => {
+            const playerTileX = this.farmingLayer.worldToTileX(this.player.x);
+            const playerTileY = this.farmingLayer.worldToTileY(this.player.y);
+            const radius = 2;
+
+            for (let y = playerTileY - radius; y <= playerTileY + radius; y++) {
+                for (let x = playerTileX - radius; x <= playerTileX + radius; x++) {
+                    const targetTile = this.farmingLayer.getTileAt(x, y);
+                    const cropTile = this.cropsLayer.getTileAt(x, y);
+
+                    // Check if the tile is tilled soil and has no crop on it
+                    if (targetTile && this.farmableTileIndices.has(targetTile.index) && (!cropTile || cropTile.index === -1)) {
+                        // Plant a crop and immediately stop searching
+                        this.cropsLayer.putTileAt(1774, x, y);
+                        return; 
+                    }
+                }
+            }
+        });
     }
 
     private updatePlayerAnimation(isRunning: boolean): void
     {
-        const isMoving = this.player.body!.velocity.x !== 0 || this.player.body!.velocity.y !== 0;
+        const body = this.player.body as Phaser.Physics.Arcade.Body;
+        const isMoving = body.velocity.x !== 0 || body.velocity.y !== 0;
         
         if (this.currentDirection === 'left') {
             this.player.setFlipX(true);
@@ -302,9 +336,18 @@ export class FarmScene extends Scene
         }
     }
 
+    private exitFarm(): void {
+        this.cameras.main.fadeOut(500, 0, 0, 0);
+        
+        this.cameras.main.once('camerafadeoutcomplete', () => {
+            this.scene.start('WorldSelectionScene');
+        });
+    }
+
     destroy(): void
     {
         // Clean up resize event listener
         this.scale.off('resize', this.handleResize, this);
+        this.windTimer.destroy();
     }
 }
