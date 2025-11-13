@@ -23,6 +23,7 @@ export class FarmScene extends Scene
     private interactKey!: Phaser.Input.Keyboard.Key;
     private escKey!: Phaser.Input.Keyboard.Key;
     private attackKey!: Phaser.Input.Keyboard.Key;
+    private spaceKey!: Phaser.Input.Keyboard.Key;
 
     // Particle properties
     private particleEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -43,6 +44,14 @@ export class FarmScene extends Scene
     
     // NPC
     private npc!: Phaser.Physics.Arcade.Sprite;
+    
+    // Chat system
+    private isChatting: boolean = false;
+    private chatBubble!: Phaser.GameObjects.Container;
+    private chatBackground!: Phaser.GameObjects.Graphics;
+    private chatText!: Phaser.GameObjects.Text;
+    private playerInput: string = '';
+    private npcResponse!: Phaser.GameObjects.Text;
 
     constructor ()
     {
@@ -83,6 +92,9 @@ export class FarmScene extends Scene
             frameHeight: 32
         });
 
+        // Load chatbox image
+        this.load.image('chatbox', '../Cute_Fantasy_Free/Player/chatbox.png');
+
         // Load particle image
         this.load.image('firefly', 'firefly.png');
     }
@@ -113,8 +125,11 @@ export class FarmScene extends Scene
 
     update ()
     {
-        this.handlePlayerMovement();
+        if (!this.isChatting) {
+            this.handlePlayerMovement();
+        }
         this.updateNPCNamePosition();
+        this.updateChatBubblePosition();
     }
 
     private updateNPCNamePosition(): void {
@@ -122,7 +137,26 @@ export class FarmScene extends Scene
         
         const nameText = this.npc.getData('nameText');
         if (nameText) {
-            nameText.setPosition(this.npc.x, this.npc.y - 40);
+            nameText.setPosition(this.npc.x, this.npc.y - 30);
+        }
+    }
+
+    private updateChatBubblePosition(): void {
+        if (!this.chatBubble || !this.chatBubble.active) return;
+        
+        // Update NPC bubble position (near name)
+        this.chatBubble.setPosition(this.npc.x, this.npc.y - 50);
+        
+        // Update player bubble if it exists
+        const playerBubble = this.player.getData('chatBubble');
+        if (playerBubble && playerBubble.active) {
+            playerBubble.setPosition(this.player.x, this.player.y - 50);
+        }
+        
+        // Update chatbox indicator position
+        const chatboxIndicator = this.player.getData('chatboxIndicator');
+        if (chatboxIndicator && chatboxIndicator.active) {
+            chatboxIndicator.setPosition(this.player.x + 20, this.player.y - 15);
         }
     }
 
@@ -455,12 +489,12 @@ export class FarmScene extends Scene
         this.npc.setData('startY', 400);
         
         // Add name text above NPC
-        const nameText = this.add.text(this.npc.x, this.npc.y - 40, 'herman', {
+        const nameText = this.add.text(this.npc.x, this.npc.y - 25, 'herman', {
             fontSize: '10px',
             color: '#ffffff'
         });
         nameText.setOrigin(0.5);
-        nameText.setDepth(101);
+        nameText.setDepth(10);
         
         // Store name text reference on NPC for potential updates
         this.npc.setData('nameText', nameText);
@@ -520,6 +554,23 @@ export class FarmScene extends Scene
     private startNPCPatrolCycle(): void
     {
         if (!this.npc || !this.npc.active) return;
+        
+        // Check if patrol is paused (during chat)
+        if (this.npc.getData('patrolPaused')) {
+            // Retry after a short delay
+            this.time.delayedCall(500, () => {
+                this.startNPCPatrolCycle();
+            });
+            return;
+        }
+        
+        // Double check we're not in a chat
+        if (this.isChatting) {
+            this.time.delayedCall(500, () => {
+                this.startNPCPatrolCycle();
+            });
+            return;
+        }
         
         const speed = 60;
         const walkDuration = 2000; // Walk for 2 seconds
@@ -628,8 +679,24 @@ export class FarmScene extends Scene
         this.interactKey = this.input.keyboard!.addKey('E');
         this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
         this.attackKey = this.input.keyboard!.addKey('Q');
+        this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         
-        this.escKey.on('down', () => this.exitFarm());
+        this.escKey.on('down', () => {
+            if (this.isChatting) {
+                this.endChat();
+            } else {
+                this.exitFarm();
+            }
+        });
+        
+        this.spaceKey.on('down', () => this.tryStartChat());
+        
+        // Listen for keyboard input for chat
+        this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
+            if (this.isChatting) {
+                this.handleChatInput(event);
+            }
+        });
     }
 
     private setupCamera(): void
@@ -847,6 +914,204 @@ export class FarmScene extends Scene
             this.player.setTexture('player', 0);
             this.player.play(`idle-${this.currentDirection}`, true);
         }
+    }
+
+    private tryStartChat(): void {
+        if (this.isChatting) return;
+        
+        // Check if player is near NPC
+        const distance = Phaser.Math.Distance.Between(
+            this.player.x, this.player.y,
+            this.npc.x, this.npc.y
+        );
+        
+        if (distance < 80) {
+            this.startChat();
+        }
+    }
+
+    private startChat(): void {
+        this.isChatting = true;
+        this.playerInput = '';
+        
+        // Stop NPC movement and pause patrol
+        this.npc.setVelocity(0, 0);
+        this.npc.setData('patrolPaused', true);
+        const currentDirection = this.npc.getData('direction') || 'right';
+        this.npc.play(`npc-idle-${currentDirection}`, true);
+        
+        // Stop player movement
+        this.player.setVelocity(0, 0);
+        
+        // Create chat bubble
+        this.createChatBubble();
+    }
+
+    private createChatBubble(): void {
+        const bubbleWidth = 100;
+        const bubbleHeight = 30;
+        const bubblePadding = 6;
+        
+        // Create chatbox indicator image beside player's head (closer to character)
+        const chatboxIndicator = this.add.image(this.player.x + 5, this.player.y - 5, 'chatbox');
+        chatboxIndicator.setScale(0.25); // Small indicator
+        chatboxIndicator.setDepth(2000);
+        this.player.setData('chatboxIndicator', chatboxIndicator);
+        
+        // Create player's chat bubble with text background
+        const playerBubble = this.add.container(this.player.x, this.player.y - 10);
+        playerBubble.setDepth(2000);
+        
+        const playerBackground = this.add.graphics();
+        playerBackground.fillStyle(0xe8f4f8, 0.95);
+        playerBackground.lineStyle(2, 0x000000, 1);
+        
+        playerBackground.fillRoundedRect(
+            -bubbleWidth / 2,
+            -bubbleHeight,
+            bubbleWidth,
+            bubbleHeight,
+            6
+        );
+        playerBackground.strokeRoundedRect(
+            -bubbleWidth / 2,
+            -bubbleHeight,
+            bubbleWidth,
+            bubbleHeight,
+            6
+        );
+        
+        this.chatText = this.add.text(
+            0,
+            -bubbleHeight / 2,
+            '',
+            {
+                fontSize: '10px',
+                color: '#000000',
+                wordWrap: { width: bubbleWidth - bubblePadding * 2 }
+            }
+        );
+        this.chatText.setOrigin(0.5, 0.5);
+        
+        playerBubble.add([playerBackground, this.chatText]);
+        this.player.setData('chatBubble', playerBubble);
+        
+        // Create NPC's chat bubble (hidden initially)
+        this.chatBubble = this.add.container(this.npc.x, this.npc.y - 50);
+        this.chatBubble.setDepth(2000);
+        this.chatBubble.setVisible(false);
+        
+        this.chatBackground = this.add.graphics();
+        this.chatBackground.fillStyle(0xffffff, 0.95);
+        this.chatBackground.lineStyle(2, 0x000000, 1);
+        
+        this.chatBackground.fillRoundedRect(
+            -bubbleWidth / 2,
+            -bubbleHeight,
+            bubbleWidth,
+            bubbleHeight,
+            6
+        );
+        this.chatBackground.strokeRoundedRect(
+            -bubbleWidth / 2,
+            -bubbleHeight,
+            bubbleWidth,
+            bubbleHeight,
+            6
+        );
+        
+        this.npcResponse = this.add.text(
+            0,
+            -bubbleHeight / 2,
+            'Deal!',
+            {
+                fontSize: '10px',
+                color: '#000000',
+                fontStyle: 'bold',
+                wordWrap: { width: bubbleWidth - bubblePadding * 2 }
+            }
+        );
+        this.npcResponse.setOrigin(0.5, 0.5);
+        
+        this.chatBubble.add([this.chatBackground, this.npcResponse]);
+    }
+
+    private handleChatInput(event: KeyboardEvent): void {
+        if (event.key === 'Enter') {
+            // Send message and get NPC response
+            this.sendMessage();
+        } else if (event.key === 'Backspace') {
+            this.playerInput = this.playerInput.slice(0, -1);
+            this.updateChatText();
+        } else if (event.key === 'Escape') {
+            // Handled by escKey listener
+            return;
+        } else if (event.key.length === 1 && this.playerInput.length < 50) {
+            // Add character to input
+            this.playerInput += event.key;
+            this.updateChatText();
+        }
+    }
+
+    private updateChatText(): void {
+        if (this.chatText) {
+            this.chatText.setText(this.playerInput + '|');
+        }
+    }
+
+    private sendMessage(): void {
+        if (this.playerInput.trim().length === 0) return;
+        
+        // Show the final message in player's bubble
+        this.chatText.setText(this.playerInput);
+        
+        // Hide chatbox indicator (stop showing typing icon)
+        const chatboxIndicator = this.player.getData('chatboxIndicator');
+        if (chatboxIndicator) {
+            chatboxIndicator.setVisible(false);
+        }
+        
+        // Allow player to move again
+        this.isChatting = false;
+        
+        // NPC responds with "Deal!"
+        this.time.delayedCall(500, () => {
+            this.chatBubble.setVisible(true);
+            
+            // Close chat after showing response (this will hide both bubbles)
+            this.time.delayedCall(2000, () => {
+                this.endChat();
+            });
+        });
+    }
+
+    private endChat(): void {
+        this.isChatting = false;
+        this.playerInput = '';
+        
+        // Destroy chatbox indicator
+        const chatboxIndicator = this.player.getData('chatboxIndicator');
+        if (chatboxIndicator) {
+            chatboxIndicator.destroy();
+            this.player.setData('chatboxIndicator', null);
+        }
+        
+        // Destroy player chat bubble
+        const playerBubble = this.player.getData('chatBubble');
+        if (playerBubble) {
+            playerBubble.destroy();
+            this.player.setData('chatBubble', null);
+        }
+        
+        // Destroy NPC chat bubble
+        if (this.chatBubble) {
+            this.chatBubble.destroy();
+        }
+        
+        // Resume NPC patrol only after everything is cleaned up
+        this.time.delayedCall(100, () => {
+            this.npc.setData('patrolPaused', false);
+        });
     }
 
     private exitFarm(): void {
