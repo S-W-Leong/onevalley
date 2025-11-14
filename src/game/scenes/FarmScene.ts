@@ -1,6 +1,16 @@
 import { Scene } from 'phaser';
 import { EventBus } from '../EventBus';
 
+interface ColliderShape {
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+    points?: { x: number; y: number }[];
+    type: 'rectangle' | 'polygon';
+    layer: string;
+}
+
 export class FarmScene extends Scene
 {
     // Map properties
@@ -23,6 +33,7 @@ export class FarmScene extends Scene
     private interactKey!: Phaser.Input.Keyboard.Key;
     private escKey!: Phaser.Input.Keyboard.Key;
     private attackKey!: Phaser.Input.Keyboard.Key;
+    private spaceKey!: Phaser.Input.Keyboard.Key;
 
     // Particle properties
     private particleEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -43,6 +54,14 @@ export class FarmScene extends Scene
     
     // NPC
     private npc!: Phaser.Physics.Arcade.Sprite;
+    
+    // Chat system
+    private isChatting: boolean = false;
+    private chatBubble!: Phaser.GameObjects.Container;
+    private chatBackground!: Phaser.GameObjects.Graphics;
+    private chatText!: Phaser.GameObjects.Text;
+    private playerInput: string = '';
+    private npcResponse!: Phaser.GameObjects.Text;
 
     constructor ()
     {
@@ -52,10 +71,13 @@ export class FarmScene extends Scene
     preload ()
     {
         this.load.setPath('assets');
-        
+
         // Load tileset and farm map
         this.load.image('tileset', 'tilesets/OneValley.png');
         this.load.tilemapTiledJSON('farm_map', 'maps/farm_map.json');
+
+        // Load tileset collision data (TSX file)
+        this.load.xml('tileset_collision', 'tilesets/OneValley.tsx');
         
         // Load player sprite
         this.load.spritesheet('player', '../Cute_Fantasy_Free/Player/Player.png', {
@@ -83,6 +105,15 @@ export class FarmScene extends Scene
             frameHeight: 32
         });
 
+        // Load chatbox image
+        this.load.image('chatbox', '../Cute_Fantasy_Free/Player/chatbox.png');
+        
+        // Load chat dialog image
+        this.load.image('chatdialog', '../Cute_Fantasy_Free/Player/chatdialog.png');
+        
+        // Load chat dialog image
+        this.load.image('chatdialog', '../Cute_Fantasy_Free/Player/chatdialog.png');
+
         // Load particle image
         this.load.image('firefly', 'firefly.png');
     }
@@ -105,6 +136,9 @@ export class FarmScene extends Scene
         // Create particles
         this.createParticles();
 
+        // Set up physics colliders for all entities
+        this.setupColliders();
+
         // Listen for interaction
         this.handleInteraction();
 
@@ -113,8 +147,11 @@ export class FarmScene extends Scene
 
     update ()
     {
-        this.handlePlayerMovement();
+        if (!this.isChatting) {
+            this.handlePlayerMovement();
+        }
         this.updateNPCNamePosition();
+        this.updateChatBubblePosition();
     }
 
     private updateNPCNamePosition(): void {
@@ -122,7 +159,26 @@ export class FarmScene extends Scene
         
         const nameText = this.npc.getData('nameText');
         if (nameText) {
-            nameText.setPosition(this.npc.x, this.npc.y - 40);
+            nameText.setPosition(this.npc.x, this.npc.y - 30);
+        }
+    }
+
+    private updateChatBubblePosition(): void {
+        if (!this.chatBubble || !this.chatBubble.active) return;
+        
+        // Update NPC bubble position (near name)
+        this.chatBubble.setPosition(this.npc.x, this.npc.y - 50);
+        
+        // Update player bubble if it exists
+        const playerBubble = this.player.getData('chatBubble');
+        if (playerBubble && playerBubble.active) {
+            playerBubble.setPosition(this.player.x, this.player.y - 50);
+        }
+        
+        // Update chatbox indicator position
+        const chatboxIndicator = this.player.getData('chatboxIndicator');
+        if (chatboxIndicator && chatboxIndicator.active) {
+            chatboxIndicator.setPosition(this.player.x + 20, this.player.y - 15);
         }
     }
 
@@ -135,14 +191,16 @@ export class FarmScene extends Scene
         const createLayer = (
             name: string,
             depth: number,
-            collides: boolean = false
+            enableCustomCollision: boolean = false
         ): Phaser.Tilemaps.TilemapLayer | null => {
             const layer = this.map.createLayer(name, this.tileset, 0, 0);
             layer?.setDepth(depth);
 
-            if (collides && layer) {
-                layer.setCollisionByExclusion([-1]);
+            // Note: We're not using layer-based collision anymore
+            // Custom collision shapes are extracted from the tileset
+            if (enableCustomCollision && layer) {
                 this.collisionLayers.push(layer);
+                console.log(`Added layer for custom collision extraction: ${name}`);
             }
 
             return layer;
@@ -153,14 +211,256 @@ export class FarmScene extends Scene
         this.cropsLayer = this.map.createBlankLayer('Crops', this.tileset, 0, 0)!;
         this.cropsLayer.setDepth(-4);
 
-    createLayer('Deco', 10);
-    createLayer('House', 15, false);
-    createLayer('Market', 18, false);
+        createLayer('Deco', 10);
+        createLayer('House', 15, true);   // Houses should have collision
+        createLayer('Market', 18, true);  // Markets should have collision
+
+        // Add the missing layers from the map
+        createLayer('animalground', 12, false);  // Ground for animals, usually no collision
+        createLayer('fence', 25, true);          // Fences should have collision
 
         ['Trees A', 'Trees B', 'Trees C', 'Trees D', 'Trees E']
-            .forEach((name, index) => createLayer(name, 20 + index, false));
+            .forEach((name, index) => createLayer(name, 20 + index, true));  // Trees should have collision
 
         this.physics.world.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
+
+        // Optional: Debug view to visualize collision shapes
+        // You can remove this in production
+        const debugGraphics = this.add.graphics().setAlpha(0.7);
+        this.collisionLayers.forEach(layer => {
+            if (layer) {
+                layer.renderDebug(debugGraphics, {
+                    tileColor: null,
+                    collidingTileColor: new Phaser.Display.Color(243, 134, 48, 255),
+                    faceColor: new Phaser.Display.Color(40, 39, 37, 255)
+                });
+            }
+        });
+    }
+
+    private extractTileColliders(map: Phaser.Tilemaps.Tilemap, tileset: Phaser.Tilemaps.Tileset): ColliderShape[] {
+        const colliders: ColliderShape[] = [];
+        const tileWidth = map.tileWidth;
+        const tileHeight = map.tileHeight;
+
+        console.log('=== DEBUG: Extracting collision data ===');
+        console.log('TileWidth:', tileWidth, 'TileHeight:', tileHeight);
+        console.log('Tileset firstgid:', tileset.firstgid);
+
+        // Get the tileset XML data
+        const tilesetXML = this.cache.xml.get('tileset_collision');
+        if (!tilesetXML) {
+            console.error('Tileset collision data not found in cache!');
+            console.log('Available cache keys:', Object.keys(this.cache.xml.entries));
+            return colliders;
+        }
+
+        console.log('Tileset XML loaded successfully');
+
+        // Parse collision objects from tileset
+        const tileCollisionMap: { [key: number]: any[] } = {};
+        const tiles = tilesetXML.getElementsByTagName('tile');
+
+        console.log('Found', tiles.length, 'tiles in tileset');
+
+        let collisionTileCount = 0;
+        for (let i = 0; i < tiles.length; i++) {
+            const tile = tiles[i];
+            const tileId = parseInt(tile.getAttribute('id'));
+            const objectGroups = tile.getElementsByTagName('objectgroup');
+
+            if (objectGroups.length > 0) {
+                const objects = objectGroups[0].getElementsByTagName('object');
+                const collisionShapes: any[] = [];
+
+                for (let j = 0; j < objects.length; j++) {
+                    const obj = objects[j];
+                    console.log(`Tile ${tileId} has object:`, {
+                        x: obj.getAttribute('x'),
+                        y: obj.getAttribute('y'),
+                        width: obj.getAttribute('width'),
+                        height: obj.getAttribute('height')
+                    });
+
+                    // Check if it's a rectangle
+                    if (obj.getAttribute('width') && obj.getAttribute('height')) {
+                        collisionShapes.push({
+                            x: parseFloat(obj.getAttribute('x') || '0'),
+                            y: parseFloat(obj.getAttribute('y') || '0'),
+                            width: parseFloat(obj.getAttribute('width') || '0'),
+                            height: parseFloat(obj.getAttribute('height') || '0'),
+                            type: 'rectangle'
+                        });
+                        collisionTileCount++;
+                    }
+                    // Check if it's a polygon
+                    else if (obj.getElementsByTagName('polygon').length > 0) {
+                        const polygon = obj.getElementsByTagName('polygon')[0];
+                        const pointsStr = polygon.getAttribute('points');
+                        if (pointsStr) {
+                            const points = pointsStr.split(' ').map((point: string) => {
+                                const [x, y] = point.split(',').map(Number);
+                                return { x, y };
+                            });
+                            collisionShapes.push({
+                                x: parseFloat(obj.getAttribute('x') || '0'),
+                                y: parseFloat(obj.getAttribute('y') || '0'),
+                                points: points,
+                                type: 'polygon'
+                            });
+                            collisionTileCount++;
+                        }
+                    }
+                }
+
+                if (collisionShapes.length > 0) {
+                    tileCollisionMap[tileId] = collisionShapes;
+                    console.log(`Tile ${tileId} has ${collisionShapes.length} collision shapes`);
+                }
+            }
+        }
+
+        console.log(`Total collision tiles found: ${collisionTileCount}`);
+        console.log('Tile collision map keys:', Object.keys(tileCollisionMap));
+
+        // Scan collision layers and create colliders
+        const collisionLayerNames = ['House', 'Market', 'fence', 'Trees A', 'Trees B', 'Trees C', 'Trees D', 'Trees E'];
+
+        console.log('=== DEBUG: Scanning layers for collision tiles ===');
+        let totalTilesScanned = 0;
+        let matchingTilesFound = 0;
+
+        collisionLayerNames.forEach(layerName => {
+            console.log(`Scanning layer: ${layerName}`);
+            const layer = map.getLayer(layerName);
+            if (!layer) {
+                console.log(`Layer ${layerName} not found!`);
+                return;
+            }
+
+            console.log(`Layer ${layerName} found, scanning tiles...`);
+            const layerData = layer.data;
+            for (let row = 0; row < layerData.length; row++) {
+                for (let col = 0; col < layerData[row].length; col++) {
+                    const tile = layerData[row][col];
+                    if (!tile || tile.index === -1) continue;
+
+                    totalTilesScanned++;
+                    const localTileId = tile.index - tileset.firstgid;
+
+                    if (tileCollisionMap[localTileId]) {
+                        matchingTilesFound++;
+                        console.log(`Found collision tile at (${col}, ${row}) - Local ID: ${localTileId}, Global ID: ${tile.index}`);
+
+                        const tileWorldX = col * tileWidth;
+                        const tileWorldY = row * tileHeight;
+
+                        tileCollisionMap[localTileId].forEach(shape => {
+                            colliders.push({
+                                x: tileWorldX + shape.x,
+                                y: tileWorldY + shape.y,
+                                width: shape.width,
+                                height: shape.height,
+                                points: shape.points,
+                                type: shape.type,
+                                layer: layerName
+                            });
+                        });
+                    }
+                }
+            }
+        });
+
+        console.log(`=== SCAN RESULTS ===`);
+        console.log(`Total tiles scanned: ${totalTilesScanned}`);
+        console.log(`Matching tiles found: ${matchingTilesFound}`);
+        console.log(`Total colliders created: ${colliders.length}`);
+
+        console.log(`Extracted ${colliders.length} collision shapes from tileset`);
+        return colliders;
+    }
+
+    private setupColliders(): void
+    {
+        console.log('Setting up custom colliders from tileset...');
+
+        // Extract collision shapes from the tileset
+        const collisionShapes = this.extractTileColliders(this.map, this.tileset);
+        console.log(`Found ${collisionShapes.length} collision shapes`);
+
+        // Create static physics group for custom collision shapes
+        const collisionGroup = this.physics.add.staticGroup();
+
+        // Create physics bodies for rectangles (Arcade Physics only supports rectangles)
+        const rectangles = collisionShapes.filter(shape => shape.type === 'rectangle');
+
+        rectangles.forEach(rect => {
+            const width = rect.width || 16;
+            const height = rect.height || 16;
+            const body = collisionGroup.create(rect.x + width/2, rect.y + height/2, '__blank');
+            body.setSize(width, height);
+            body.setOrigin(0.5, 0.5);
+            body.setVisible(false); // Hide the placeholder sprite
+            body.setImmovable(true);
+        });
+
+        // For polygons, create multiple small rectangles to approximate the shape
+        const polygons = collisionShapes.filter(shape => shape.type === 'polygon');
+        polygons.forEach(poly => {
+            if (poly.points && poly.points.length > 0) {
+                // Create a bounding box for polygons (Arcade limitation)
+                const minX = Math.min(...poly.points.map((p: { x: number }) => p.x));
+                const maxX = Math.max(...poly.points.map((p: { x: number }) => p.x));
+                const minY = Math.min(...poly.points.map((p: { y: number }) => p.y));
+                const maxY = Math.max(...poly.points.map((p: { y: number }) => p.y));
+
+                const width = maxX - minX;
+                const height = maxY - minY;
+
+                const body = collisionGroup.create(poly.x + minX + width/2, poly.y + minY + height/2, '__blank');
+                body.setSize(width, height);
+                body.setOrigin(0.5, 0.5);
+                body.setVisible(false);
+                body.setImmovable(true);
+            }
+        });
+
+        // Add colliders with player, NPC, and chickens
+        this.physics.add.collider(this.player, collisionGroup);
+
+        if (this.npc) {
+            this.physics.add.collider(this.npc, collisionGroup);
+        }
+
+        this.chickens.forEach(chicken => {
+            if (chicken && chicken.active) {
+                this.physics.add.collider(chicken, collisionGroup);
+            }
+        });
+
+        // Optional: Debug visualization
+        if (false) { // Set to true to see collision shapes
+            rectangles.forEach(rect => {
+                this.add.rectangle(rect.x, rect.y, rect.width, rect.height, 0xff0000, 0.3).setOrigin(0, 0);
+            });
+
+            polygons.forEach(poly => {
+                if (poly.points && poly.points.length > 0) {
+                    const graphics = this.add.graphics();
+                    graphics.fillStyle(0x00ff00, 0.3);
+                    graphics.beginPath();
+                    graphics.moveTo(poly.x + poly.points[0].x, poly.y + poly.points[0].y);
+                    poly.points.forEach((point: { x: number; y: number }) => {
+                        graphics.lineTo(poly.x + point.x, poly.y + point.y);
+                    });
+                    graphics.closePath();
+                    graphics.fillPath();
+                }
+            });
+        }
+
+        console.log(`Created ${rectangles.length} rectangle colliders and ${polygons.length} polygon colliders`);
+        console.log('Custom colliders setup complete!');
     }
 
     private createParticles(): void {
@@ -380,15 +680,18 @@ export class FarmScene extends Scene
         this.player.setScale(2.0);
         this.player.setCollideWorldBounds(true);
         const body = this.player.body as Phaser.Physics.Arcade.Body;
-        body.setSize(19.2, 16);
-        body.setOffset(6.4, 12.8);
+
+        // Make the collision body 50% smaller than the visual sprite
+        // Original: 19.2 x 16, New: 9.6 x 8 (50% of original)
+        body.setSize(9.6, 8);
+        // Center the smaller collision box within the sprite
+        body.setOffset((32 - 9.6) / 2, (32 - 8) / 2);
+
         this.player.play('idle-down');
         this.player.setDepth(1000);
-        
-        // Add collision with map layers (trees, houses)
-        this.collisionLayers.forEach(layer => {
-            this.physics.add.collider(this.player, layer);
-        });
+
+        // Add collision with map layers (trees, houses, fences)
+        // This will be called after layers are created in setupColliders()
     }
 
     private createChickens(): void
@@ -412,11 +715,8 @@ export class FarmScene extends Scene
             
             // Store chicken in array
             this.chickens.push(chicken);
-            
-            // Add collision with map layers
-            this.collisionLayers.forEach(layer => {
-                this.physics.add.collider(chicken, layer);
-            });
+
+            // Collision with map layers will be handled in setupColliders()
 
             // Make chicken walk randomly
             const movementTimer = this.time.addEvent({
@@ -442,10 +742,7 @@ export class FarmScene extends Scene
         body.setSize(19.2, 16);
         body.setOffset(6.4, 12.8);
         
-        // Add collision with map layers
-        this.collisionLayers.forEach(layer => {
-            this.physics.add.collider(this.npc, layer);
-        });
+        // Collision with map layers will be handled in setupColliders()
         
         // Play idle animation
         this.npc.play('npc-idle-down');
@@ -455,12 +752,12 @@ export class FarmScene extends Scene
         this.npc.setData('startY', 400);
         
         // Add name text above NPC
-        const nameText = this.add.text(this.npc.x, this.npc.y - 40, 'herman', {
+        const nameText = this.add.text(this.npc.x, this.npc.y - 25, 'herman', {
             fontSize: '10px',
             color: '#ffffff'
         });
         nameText.setOrigin(0.5);
-        nameText.setDepth(101);
+        nameText.setDepth(10);
         
         // Store name text reference on NPC for potential updates
         this.npc.setData('nameText', nameText);
@@ -520,6 +817,23 @@ export class FarmScene extends Scene
     private startNPCPatrolCycle(): void
     {
         if (!this.npc || !this.npc.active) return;
+        
+        // Check if patrol is paused (during chat)
+        if (this.npc.getData('patrolPaused')) {
+            // Retry after a short delay
+            this.time.delayedCall(500, () => {
+                this.startNPCPatrolCycle();
+            });
+            return;
+        }
+        
+        // Double check we're not in a chat
+        if (this.isChatting) {
+            this.time.delayedCall(500, () => {
+                this.startNPCPatrolCycle();
+            });
+            return;
+        }
         
         const speed = 60;
         const walkDuration = 2000; // Walk for 2 seconds
@@ -628,8 +942,24 @@ export class FarmScene extends Scene
         this.interactKey = this.input.keyboard!.addKey('E');
         this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
         this.attackKey = this.input.keyboard!.addKey('Q');
+        this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         
-        this.escKey.on('down', () => this.exitFarm());
+        this.escKey.on('down', () => {
+            if (this.isChatting) {
+                this.endChat();
+            } else {
+                this.exitFarm();
+            }
+        });
+        
+        this.spaceKey.on('down', () => this.tryStartChat());
+        
+        // Listen for keyboard input for chat
+        this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
+            if (this.isChatting) {
+                this.handleChatInput(event);
+            }
+        });
     }
 
     private setupCamera(): void
@@ -847,6 +1177,174 @@ export class FarmScene extends Scene
             this.player.setTexture('player', 0);
             this.player.play(`idle-${this.currentDirection}`, true);
         }
+    }
+
+    private tryStartChat(): void {
+        if (this.isChatting) return;
+        
+        // Check if player is near NPC
+        const distance = Phaser.Math.Distance.Between(
+            this.player.x, this.player.y,
+            this.npc.x, this.npc.y
+        );
+        
+        if (distance < 80) {
+            this.startChat();
+        }
+    }
+
+    private startChat(): void {
+        this.isChatting = true;
+        this.playerInput = '';
+        
+        // Stop NPC movement and pause patrol
+        this.npc.setVelocity(0, 0);
+        this.npc.setData('patrolPaused', true);
+        const currentDirection = this.npc.getData('direction') || 'right';
+        this.npc.play(`npc-idle-${currentDirection}`, true);
+        
+        // Stop player movement
+        this.player.setVelocity(0, 0);
+        
+        // Create chat bubble
+        this.createChatBubble();
+    }
+
+    private createChatBubble(): void {
+        const bubbleWidth = 100;
+        const bubbleHeight = 30;
+        const bubblePadding = 6;
+        
+        // Create chatbox indicator image beside player's head (closer to character)
+        const chatboxIndicator = this.add.image(this.player.x + 5, this.player.y - 5, 'chatbox');
+        chatboxIndicator.setScale(0.25); // Small indicator
+        chatboxIndicator.setDepth(2000);
+        this.player.setData('chatboxIndicator', chatboxIndicator);
+        
+        // Create player's chat bubble with chatdialog image
+        const playerBubble = this.add.container(this.player.x, this.player.y - 10);
+        playerBubble.setDepth(2000);
+        
+        // Add chatdialog image
+        const chatDialogImage = this.add.image(0, -20, 'chatdialog');
+        chatDialogImage.setScale(0.15); // Scale down from 905x276
+        
+        this.chatText = this.add.text(
+            0,
+            -20,
+            '',
+            {
+                fontSize: '10px',
+                color: '#000000',
+                wordWrap: { width: 120 }
+            }
+        );
+        this.chatText.setOrigin(0.5, 0.5);
+        
+        playerBubble.add([chatDialogImage, this.chatText]);
+        this.player.setData('chatBubble', playerBubble);
+        
+        // Create NPC's chat bubble (hidden initially)
+        this.chatBubble = this.add.container(this.npc.x, this.npc.y - 50);
+        this.chatBubble.setDepth(2000);
+        this.chatBubble.setVisible(false);
+        
+        // Add chatdialog image for NPC
+        const npcDialogImage = this.add.image(0, -20, 'chatdialog');
+        npcDialogImage.setScale(0.15); // Scale down from 905x276
+        
+        this.npcResponse = this.add.text(
+            0,
+            -20,
+            'Deal!',
+            {
+                fontSize: '10px',
+                color: '#000000',
+                fontStyle: 'bold',
+                wordWrap: { width: 120 }
+            }
+        );
+        this.npcResponse.setOrigin(0.5, 0.5);
+        
+        this.chatBubble.add([npcDialogImage, this.npcResponse]);
+    }
+
+    private handleChatInput(event: KeyboardEvent): void {
+        if (event.key === 'Enter') {
+            // Send message and get NPC response
+            this.sendMessage();
+        } else if (event.key === 'Backspace') {
+            this.playerInput = this.playerInput.slice(0, -1);
+            this.updateChatText();
+        } else if (event.key === 'Escape') {
+            // Handled by escKey listener
+            return;
+        } else if (event.key.length === 1 && this.playerInput.length < 50) {
+            // Add character to input
+            this.playerInput += event.key;
+            this.updateChatText();
+        }
+    }
+
+    private updateChatText(): void {
+        if (this.chatText) {
+            this.chatText.setText(this.playerInput + '|');
+        }
+    }
+
+    private sendMessage(): void {
+        if (this.playerInput.trim().length === 0) return;
+        
+        // Show the final message in player's bubble
+        this.chatText.setText(this.playerInput);
+        
+        // Hide chatbox indicator (stop showing typing icon)
+        const chatboxIndicator = this.player.getData('chatboxIndicator');
+        if (chatboxIndicator) {
+            chatboxIndicator.setVisible(false);
+        }
+        
+        // Allow player to move again
+        this.isChatting = false;
+        
+        // NPC responds with "Deal!"
+        this.time.delayedCall(500, () => {
+            this.chatBubble.setVisible(true);
+            
+            // Close chat after showing response (this will hide both bubbles)
+            this.time.delayedCall(2000, () => {
+                this.endChat();
+            });
+        });
+    }
+
+    private endChat(): void {
+        this.isChatting = false;
+        this.playerInput = '';
+        
+        // Destroy chatbox indicator
+        const chatboxIndicator = this.player.getData('chatboxIndicator');
+        if (chatboxIndicator) {
+            chatboxIndicator.destroy();
+            this.player.setData('chatboxIndicator', null);
+        }
+        
+        // Destroy player chat bubble
+        const playerBubble = this.player.getData('chatBubble');
+        if (playerBubble) {
+            playerBubble.destroy();
+            this.player.setData('chatBubble', null);
+        }
+        
+        // Destroy NPC chat bubble
+        if (this.chatBubble) {
+            this.chatBubble.destroy();
+        }
+        
+        // Resume NPC patrol only after everything is cleaned up
+        this.time.delayedCall(100, () => {
+            this.npc.setData('patrolPaused', false);
+        });
     }
 
     private exitFarm(): void {
