@@ -173,15 +173,17 @@ export class FarmScene extends Scene {
 
         EventBus.emit('current-scene-ready', this);
 
-        // Launch the UI Scene
-        this.scene.launch(SCENE_KEYS.UI);
-        
-        // Add test items after a short delay to ensure UI is ready
+        // Launch the UI Scene with parent reference
+        this.scene.launch(SCENE_KEYS.UI, { parent: this });
+
+        // Add test items and show UI after a short delay to ensure everything is loaded
         this.time.delayedCall(1000, () => {
             const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
             if (uiScene) {
                 uiScene.addItem('coin', 0);
                 uiScene.addItem('seed', 1);
+                // Show the UI after adding items
+                uiScene.showUI();
             }
         });
 
@@ -804,28 +806,39 @@ export class FarmScene extends Scene {
     }
 
     private moveChickenRandomly(chicken: Phaser.Physics.Arcade.Sprite): void {
-        // Randomly decide to walk or idle
-        const shouldWalk = Math.random() > 0.5;
+        // Safety check for chicken and its physics body
+        if (!chicken || !chicken.body || !chicken.scene) return;
 
+        const shouldWalk = Math.random() > 0.5;
         if (shouldWalk) {
             // Random direction
             const velocityX = Phaser.Math.Between(-50, 50);
             const velocityY = Phaser.Math.Between(-50, 50);
-            chicken.setVelocity(velocityX, velocityY);
-            chicken.play('chicken-walk', true);
+            
+            // Additional safety check before setting velocity
+            if (chicken.active && chicken.body) {
+                chicken.setVelocity(velocityX, velocityY);
+                if (chicken.anims) {
+                    chicken.play('chicken-walk', true);
+                }
 
-            // Flip chicken based on direction
-            if (velocityX < 0) {
-                chicken.setFlipX(true);
-            } else if (velocityX > 0) {
-                chicken.setFlipX(false);
+                // Flip sprite based on direction
+                if (velocityX < 0) {
+                    chicken.setFlipX(true);
+                } else if (velocityX > 0) {
+                    chicken.setFlipX(false);
+                }
+
+                // Stop after a short time with safety check
+                this.time.delayedCall(1000, () => {
+                    if (chicken && chicken.body && chicken.active) {
+                        chicken.setVelocity(0, 0);
+                        if (chicken.anims) {
+                            chicken.play('chicken-idle', true);
+                        }
+                    }
+                });
             }
-
-            // Stop after a short time
-            this.time.delayedCall(1000, () => {
-                chicken.setVelocity(0, 0);
-                chicken.play('chicken-idle', true);
-            });
         }
     }
 

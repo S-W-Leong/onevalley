@@ -28,18 +28,33 @@ export class UIScene extends Phaser.Scene {
     }
 
     public create(): void {
-        // Create main HUD container
-        this.#hudContainer = this.add.container(0, 0);
+        // Create main HUD container with high depth
+        this.#hudContainer = this.add.container(0, 0).setDepth(10000);
         this.#hearts = [];
 
         // Create item bar
         this.createItemBar();
 
-        // Handle window resize
+        // Handle window resize with proper context binding
+        this.handleResize = this.handleResize.bind(this);
         this.scale.on('resize', this.handleResize, this);
+        
+        // Cleanup on scene shutdown
         this.events.once('shutdown', () => {
             this.scale.off('resize', this.handleResize, this);
+            this.#hudContainer.destroy(true);
         });
+
+        // Start with UI hidden by default
+        this.hideUI();
+    }
+
+    public showUI(): void {
+        this.#hudContainer.setVisible(true);
+    }
+
+    public hideUI(): void {
+        this.#hudContainer.setVisible(false);
     }
 
     private createItemBar(): void {
@@ -48,11 +63,6 @@ export class UIScene extends Phaser.Scene {
         this.itemBarContainer.setScrollFactor(0);
         this.itemBarContainer.setDepth(10000);
         this.#hudContainer.add(this.itemBarContainer);
-
-        // Add debug background
-        const debugBg = this.add.rectangle(0, 0, 400, 80, 0xff0000, 0.5)
-            .setOrigin(0.5, 0.5);
-        this.itemBarContainer.add(debugBg);
 
         // Create slots
         this.createSlots();
@@ -80,16 +90,17 @@ export class UIScene extends Phaser.Scene {
 
         for (let i = 0; i < this.SLOT_COUNT; i++) {
             const x = startX + i * (slotSize + spacing);
-            
+
             // Create slot background
             let slotBg;
             if (this.textures.exists('slot')) {
                 slotBg = this.add.image(x, 0, 'slot').setOrigin(0.5, 0.5);
             } else {
-                slotBg = this.add.rectangle(x, 0, slotSize, slotSize, 0x0000ff, 0.5)
+                // Create an invisible slot for layout purposes
+                slotBg = this.add.rectangle(x, 0, slotSize, slotSize, 0x000000, 0)
                     .setOrigin(0.5, 0.5);
             }
-            
+
             // Add slot number
             const numText = this.add.text(x, -20, `${i + 1}`, {
                 fontSize: '14px',
@@ -97,11 +108,11 @@ export class UIScene extends Phaser.Scene {
                 stroke: '#000000',
                 strokeThickness: 3
             }).setOrigin(0.5, 0.5);
-            
+
             this.itemBarContainer.add(slotBg);
             this.itemBarContainer.add(numText);
-            
-            this.slots.push({ 
+
+            this.slots.push({
                 bg: slotBg,
                 x: x,
                 y: 0
@@ -139,7 +150,7 @@ export class UIScene extends Phaser.Scene {
         }
 
         const slot = this.slots[slotIndex];
-        
+
         // Remove existing item if any
         if (slot.itemImage) {
             slot.itemImage.destroy();
