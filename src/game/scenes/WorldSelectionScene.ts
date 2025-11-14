@@ -89,11 +89,17 @@ export class WorldSelectionScene extends Scene {
         });
     }
 
-    create() {
+    public create() {
         this.worlds = [...this.allWorlds];
         this.filteredData = this.selectedTab === 'worlds' ? this.worlds : this.friends;
         
         this.cameras.main.fadeIn(500, 0, 0, 0);
+        
+        // Hide UI when selection scene is active
+        const uiScene = this.scene.get('UIScene');
+        if (uiScene && (uiScene as any).hideUI) {
+            (uiScene as any).hideUI();
+        }
         
         this.createBackground();
         this.createHeader();
