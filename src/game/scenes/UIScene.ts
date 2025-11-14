@@ -19,6 +19,8 @@ export class UIScene extends Phaser.Scene {
     private selectedIndex: number = 0;
     private readonly SLOT_COUNT = 8;
     private barBg!: Phaser.GameObjects.Image;
+    private cursorKeys?: Phaser.Types.Input.Keyboard.CursorKeys;
+    private selectionIndicator?: Phaser.GameObjects.Rectangle;
 
     constructor() {
         super({
@@ -47,6 +49,9 @@ export class UIScene extends Phaser.Scene {
 
         // Start with UI hidden by default
         this.hideUI();
+        
+        // Setup keyboard input for item selection
+        this.setupInput();
     }
 
     public showUI(): void {
@@ -87,6 +92,13 @@ export class UIScene extends Phaser.Scene {
             this.barBg = this.add.image(0, 0, 'itembar').setOrigin(0.5, 0.5);
             this.itemBarContainer.add(this.barBg);
         }
+
+        // Create selection indicator
+        this.selectionIndicator = this.add.rectangle(0, 0, slotSize + 8, slotSize + 8, 0, 0)
+            .setStrokeStyle(2, 0x00ff00)
+            .setOrigin(0.5, 0.5)
+            .setVisible(false);
+        this.itemBarContainer.add(this.selectionIndicator);
 
         for (let i = 0; i < this.SLOT_COUNT; i++) {
             const x = startX + i * (slotSize + spacing);
@@ -132,15 +144,25 @@ export class UIScene extends Phaser.Scene {
     }
 
     private updateSelection(): void {
-        this.slots.forEach((slot, i) => {
-            const tint = i === this.selectedIndex ? 0x88ff88 : 0xffffff;
-            if ('setTint' in slot.bg) {
-                slot.bg.setTint(tint);
-            }
-            if (slot.icon) {
-                slot.icon.setTint(tint);
+        if (!this.selectionIndicator) return;
+
+        // Update selection indicator position
+        const slot = this.slots[this.selectedIndex];
+        if (slot) {
+            this.selectionIndicator.setPosition(slot.x, slot.y);
+            this.selectionIndicator.setVisible(true);
+        }
+
+        // Update slot number colors
+        this.slots.forEach((_, index) => {
+            const numText = this.itemBarContainer.getAt(index * 2 + 1) as Phaser.GameObjects.Text;
+            if (numText) {
+                numText.setColor(index === this.selectedIndex ? '#00ff00' : '#ffffff');
             }
         });
+        
+        // Emit event when selection changes
+        this.events.emit('slot-selected', this.selectedIndex);
     }
 
     public addItem(itemId: string, slotIndex: number): void {
@@ -187,6 +209,35 @@ export class UIScene extends Phaser.Scene {
     }
 
     private handleResize = (): void => {
+        if (!this.scene.settings.active) return;
         this.updatePosition();
+        this.itemBarContainer.setVisible(true);
+    }
+
+    private setupInput(): void {
+        // Add number key support (1-8)
+        for (let i = 0; i < this.SLOT_COUNT; i++) {
+            const key = this.input.keyboard?.addKey(48 + i + 1); // 49 is '1', 50 is '2', etc.
+            key?.on('down', () => {
+                this.selectSlot(i);
+            });
+        }
+
+        // Add arrow key support
+        this.input.keyboard?.on('keydown', (event: KeyboardEvent) => {
+            if (event.key === 'ArrowLeft') {
+                this.selectSlot((this.selectedIndex - 1 + this.SLOT_COUNT) % this.SLOT_COUNT);
+                event.preventDefault();
+            } else if (event.key === 'ArrowRight') {
+                this.selectSlot((this.selectedIndex + 1) % this.SLOT_COUNT);
+                event.preventDefault();
+            }
+        });
+    }
+
+    private selectSlot(index: number): void {
+        if (index < 0 || index >= this.SLOT_COUNT) return;
+        this.selectedIndex = index;
+        this.updateSelection();
     }
 }
