@@ -1,5 +1,7 @@
 import { Scene } from 'phaser';
 import { EventBus } from '../EventBus';
+import { UIScene } from './UIScene';
+import { SCENE_KEYS } from './SceneKeys';
 
 interface ColliderShape {
     x: number;
@@ -11,15 +13,14 @@ interface ColliderShape {
     layer: string;
 }
 
-export class FarmScene extends Scene
-{
+export class FarmScene extends Scene {
     // Map properties
     private map!: Phaser.Tilemaps.Tilemap;
     private tileset!: Phaser.Tilemaps.Tileset;
     private collisionLayers: Phaser.Tilemaps.TilemapLayer[] = [];
     private farmingLayer!: Phaser.Tilemaps.TilemapLayer;
     private cropsLayer!: Phaser.Tilemaps.TilemapLayer;
-    
+
     // Player-related properties
     private player!: Phaser.Physics.Arcade.Sprite;
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -38,7 +39,7 @@ export class FarmScene extends Scene
     // Particle properties
     private particleEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
     private windTimer!: Phaser.Time.TimerEvent;
-    
+
     // Farming properties
     private farmableTileIndices: Set<number> = new Set([521, 522, 523, 578, 579, 580, 635, 636, 637]);
 
@@ -48,13 +49,13 @@ export class FarmScene extends Scene
     private currentDirection: string = 'down';
     private initialZoom: number = 3;
     private isAttacking: boolean = false;
-    
+
     // Chickens
     private chickens: Phaser.Physics.Arcade.Sprite[] = [];
-    
+
     // NPC
     private npc!: Phaser.Physics.Arcade.Sprite;
-    
+
     // Chat system
     private isChatting: boolean = false;
     private chatBubble!: Phaser.GameObjects.Container;
@@ -63,13 +64,12 @@ export class FarmScene extends Scene
     private playerInput: string = '';
     private npcResponse!: Phaser.GameObjects.Text;
 
-    constructor ()
-    {
+    constructor() {
         super('FarmScene');
     }
 
-    preload ()
-    {
+    preload() {
+        console.log('Starting to load assets...');
         this.load.setPath('assets');
 
         // Load tileset and farm map
@@ -78,11 +78,24 @@ export class FarmScene extends Scene
 
         // Load tileset collision data (TSX file)
         this.load.xml('tileset_collision', 'tilesets/OneValley.tsx');
-        
+
         // Load player sprite
         this.load.spritesheet('player', '../Cute_Fantasy_Free/Player/Player.png', {
             frameWidth: 32,
             frameHeight: 32
+        });
+
+        // Load UI assets with explicit paths
+        this.load.setPath('assets/ui');
+        this.load.image('itembar', 'itembar.png');
+        this.load.image('slot', 'slot.png');
+        this.load.setPath('assets'); // Reset path
+
+        // Debug: Log when assets are loaded
+        this.load.on('complete', () => {
+            console.log('Assets loaded successfully');
+            console.log('itembar texture exists:', this.textures.exists('itembar'));
+            console.log('slot texture exists:', this.textures.exists('slot'));
         });
 
         // Load player attack sprite (128x128 image, 4 columns x 4 rows, but last row only has 4 frames)
@@ -98,7 +111,7 @@ export class FarmScene extends Scene
             frameWidth: 32,
             frameHeight: 32
         });
-        
+
         // Load NPC sprite (same size as player: 32x32)
         this.load.spritesheet('npc', '../Cute_Fantasy_Free/Player/Npc.png', {
             frameWidth: 32,
@@ -107,22 +120,38 @@ export class FarmScene extends Scene
 
         // Load chatbox image
         this.load.image('chatbox', '../Cute_Fantasy_Free/Player/chatbox.png');
-        
+
         // Load chat dialog image
         this.load.image('chatdialog', '../Cute_Fantasy_Free/Player/chatdialog.png');
-        
+
         // Load chat dialog image
         this.load.image('chatdialog', '../Cute_Fantasy_Free/Player/chatdialog.png');
 
         // Load particle image
         this.load.image('firefly', 'firefly.png');
+
+        // Load UI assets
+        this.load.setPath('assets/ui');
+        this.load.image('slot', 'slot.png');
+        this.load.image('itembar', 'itembar.png');
+        this.load.image('backpack', 'backpack.png');
+        this.load.image('marketplace', 'marketplace.png');
+        this.load.setPath('assets');
     }
 
-    create ()
-    {
+    create() {
+        console.log('FarmScene create() started');
+
+        // Debug: Log camera info
+        console.log('Camera at create start:', {
+            width: this.cameras.main.width,
+            height: this.cameras.main.height,
+            visible: this.cameras.main.visible
+        });
+
         // Create the farm map
         this.createMap();
-        
+
         // Create player and controls
         this.createPlayerAnimations();
         this.createChickenAnimations();
@@ -132,7 +161,7 @@ export class FarmScene extends Scene
         this.createNPC();
         this.setupInputs();
         this.setupCamera();
-        
+
         // Create particles
         this.createParticles();
 
@@ -143,10 +172,25 @@ export class FarmScene extends Scene
         this.handleInteraction();
 
         EventBus.emit('current-scene-ready', this);
+
+        // Launch the UI Scene
+        this.scene.launch(SCENE_KEYS.UI);
+        
+        // Add test items after a short delay to ensure UI is ready
+        this.time.delayedCall(1000, () => {
+            const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
+            if (uiScene) {
+                uiScene.addItem('coin', 0);
+                uiScene.addItem('seed', 1);
+            }
+        });
+
+        // Handle window resize
+        this.scale.off('resize', this.handleResize, this); // Remove any existing
+        this.scale.on('resize', this.handleResize, this);
     }
 
-    update ()
-    {
+    update() {
         if (!this.isChatting) {
             this.handlePlayerMovement();
         }
@@ -154,9 +198,10 @@ export class FarmScene extends Scene
         this.updateChatBubblePosition();
     }
 
+
     private updateNPCNamePosition(): void {
         if (!this.npc || !this.npc.active) return;
-        
+
         const nameText = this.npc.getData('nameText');
         if (nameText) {
             nameText.setPosition(this.npc.x, this.npc.y - 30);
@@ -165,16 +210,16 @@ export class FarmScene extends Scene
 
     private updateChatBubblePosition(): void {
         if (!this.chatBubble || !this.chatBubble.active) return;
-        
+
         // Update NPC bubble position (near name)
         this.chatBubble.setPosition(this.npc.x, this.npc.y - 50);
-        
+
         // Update player bubble if it exists
         const playerBubble = this.player.getData('chatBubble');
         if (playerBubble && playerBubble.active) {
             playerBubble.setPosition(this.player.x, this.player.y - 50);
         }
-        
+
         // Update chatbox indicator position
         const chatboxIndicator = this.player.getData('chatboxIndicator');
         if (chatboxIndicator && chatboxIndicator.active) {
@@ -182,8 +227,7 @@ export class FarmScene extends Scene
         }
     }
 
-    private createMap(): void
-    {
+    private createMap(): void {
         this.map = this.make.tilemap({ key: 'farm_map' });
         this.tileset = this.map.addTilesetImage('OneValley', 'tileset')!;
         this.collisionLayers = [];
@@ -380,8 +424,7 @@ export class FarmScene extends Scene
         return colliders;
     }
 
-    private setupColliders(): void
-    {
+    private setupColliders(): void {
         console.log('Setting up custom colliders from tileset...');
 
         // Extract collision shapes from the tileset
@@ -397,7 +440,7 @@ export class FarmScene extends Scene
         rectangles.forEach(rect => {
             const width = rect.width || 16;
             const height = rect.height || 16;
-            const body = collisionGroup.create(rect.x + width/2, rect.y + height/2, '__blank');
+            const body = collisionGroup.create(rect.x + width / 2, rect.y + height / 2, '__blank');
             body.setSize(width, height);
             body.setOrigin(0.5, 0.5);
             body.setVisible(false); // Hide the placeholder sprite
@@ -417,7 +460,7 @@ export class FarmScene extends Scene
                 const width = maxX - minX;
                 const height = maxY - minY;
 
-                const body = collisionGroup.create(poly.x + minX + width/2, poly.y + minY + height/2, '__blank');
+                const body = collisionGroup.create(poly.x + minX + width / 2, poly.y + minY + height / 2, '__blank');
                 body.setSize(width, height);
                 body.setOrigin(0.5, 0.5);
                 body.setVisible(false);
@@ -490,14 +533,13 @@ export class FarmScene extends Scene
     private updateWind(): void {
         const windX = Phaser.Math.Between(-20, 20);
         const windY = Phaser.Math.Between(-20, 20);
-        
+
         // Correct way to set acceleration in recent Phaser 3 versions
         this.particleEmitter.accelerationX = windX;
         this.particleEmitter.accelerationY = windY;
     }
 
-    private createPlayerAnimations(): void
-    {
+    private createPlayerAnimations(): void {
         // Idle animations (6 frames each, looping)
         this.anims.create({
             key: 'idle-up',
@@ -611,8 +653,7 @@ export class FarmScene extends Scene
         });
     }
 
-    private createChickenAnimations(): void
-    {
+    private createChickenAnimations(): void {
         // Chicken idle animation (2 frames)
         this.anims.create({
             key: 'chicken-idle',
@@ -630,8 +671,7 @@ export class FarmScene extends Scene
         });
     }
 
-    private createNPCAnimations(): void
-    {
+    private createNPCAnimations(): void {
         // NPC idle animations (same structure as player)
         this.anims.create({
             key: 'npc-idle-down',
@@ -673,8 +713,7 @@ export class FarmScene extends Scene
         });
     }
 
-    private createPlayer(): void
-    {
+    private createPlayer(): void {
         // Spawn player at center of map (400, 400 for 800x800 farm map)
         this.player = this.physics.add.sprite(400, 400, 'player', 0);
         this.player.setScale(2.0);
@@ -694,8 +733,7 @@ export class FarmScene extends Scene
         // This will be called after layers are created in setupColliders()
     }
 
-    private createChickens(): void
-    {
+    private createChickens(): void {
         // Spawn 3 chickens at different positions on the farm
         const chickenPositions = [
             { x: 200, y: 300 },
@@ -708,11 +746,11 @@ export class FarmScene extends Scene
             chicken.setScale(1.5);
             chicken.play('chicken-idle');
             chicken.setDepth(100);
-            
+
             // Add health data to chicken
             chicken.setData('health', 3);
             chicken.setData('maxHealth', 3);
-            
+
             // Store chicken in array
             this.chickens.push(chicken);
 
@@ -724,33 +762,32 @@ export class FarmScene extends Scene
                 callback: () => this.moveChickenRandomly(chicken),
                 loop: true
             });
-            
+
             // Store timer reference on chicken
             chicken.setData('movementTimer', movementTimer);
         });
     }
 
-    private createNPC(): void
-    {
+    private createNPC(): void {
         // Spawn NPC at position (300, 400) using npc sprite
         this.npc = this.physics.add.sprite(300, 400, 'npc', 0);
         this.npc.setScale(2.0);
         this.npc.setDepth(100);
-        
+
         // Set up collision body (same as player)
         const body = this.npc.body as Phaser.Physics.Arcade.Body;
         body.setSize(19.2, 16);
         body.setOffset(6.4, 12.8);
-        
+
         // Collision with map layers will be handled in setupColliders()
-        
+
         // Play idle animation
         this.npc.play('npc-idle-down');
-        
+
         // Store starting position for NPC
         this.npc.setData('startX', 300);
         this.npc.setData('startY', 400);
-        
+
         // Add name text above NPC
         const nameText = this.add.text(this.npc.x, this.npc.y - 25, 'herman', {
             fontSize: '10px',
@@ -758,33 +795,32 @@ export class FarmScene extends Scene
         });
         nameText.setOrigin(0.5);
         nameText.setDepth(10);
-        
+
         // Store name text reference on NPC for potential updates
         this.npc.setData('nameText', nameText);
-        
+
         // Set up patrol behavior
         this.setupNPCPatrol();
     }
 
-    private moveChickenRandomly(chicken: Phaser.Physics.Arcade.Sprite): void
-    {
+    private moveChickenRandomly(chicken: Phaser.Physics.Arcade.Sprite): void {
         // Randomly decide to walk or idle
         const shouldWalk = Math.random() > 0.5;
-        
+
         if (shouldWalk) {
             // Random direction
             const velocityX = Phaser.Math.Between(-50, 50);
             const velocityY = Phaser.Math.Between(-50, 50);
             chicken.setVelocity(velocityX, velocityY);
             chicken.play('chicken-walk', true);
-            
+
             // Flip chicken based on direction
             if (velocityX < 0) {
                 chicken.setFlipX(true);
             } else if (velocityX > 0) {
                 chicken.setFlipX(false);
             }
-            
+
             // Stop after a short time
             this.time.delayedCall(1000, () => {
                 chicken.setVelocity(0, 0);
@@ -793,31 +829,28 @@ export class FarmScene extends Scene
         }
     }
 
-    private setupNPCWandering(): void
-    {
+    private setupNPCWandering(): void {
         // Make NPC wander randomly
         const wanderTimer = this.time.addEvent({
             delay: Phaser.Math.Between(2000, 5000),
             callback: () => this.moveNPCRandomly(),
             loop: true
         });
-        
+
         // Store timer reference on NPC
         this.npc.setData('wanderTimer', wanderTimer);
     }
 
-    private setupNPCPatrol(): void
-    {
+    private setupNPCPatrol(): void {
         // Start with 4 second idle, then begin patrol loop
         this.time.delayedCall(4000, () => {
             this.startNPCPatrolCycle();
         });
     }
 
-    private startNPCPatrolCycle(): void
-    {
+    private startNPCPatrolCycle(): void {
         if (!this.npc || !this.npc.active) return;
-        
+
         // Check if patrol is paused (during chat)
         if (this.npc.getData('patrolPaused')) {
             // Retry after a short delay
@@ -826,7 +859,7 @@ export class FarmScene extends Scene
             });
             return;
         }
-        
+
         // Double check we're not in a chat
         if (this.isChatting) {
             this.time.delayedCall(500, () => {
@@ -834,39 +867,39 @@ export class FarmScene extends Scene
             });
             return;
         }
-        
+
         const speed = 60;
         const walkDuration = 2000; // Walk for 2 seconds
         const idleDuration = 4000; // Idle for 4 seconds in the middle
-        
+
         // Step 1: Walk right
         this.npc.setFlipX(false);
         this.npc.setVelocity(speed, 0);
         this.npc.play('npc-walk-right', true);
-        
+
         this.time.delayedCall(walkDuration, () => {
             if (!this.npc || !this.npc.active) return;
-            
+
             // Step 2: Stop and idle
             this.npc.setVelocity(0, 0);
             this.npc.play('npc-idle-right', true);
-            
+
             this.time.delayedCall(idleDuration, () => {
                 if (!this.npc || !this.npc.active) return;
-                
+
                 // Step 3: Walk left back to starting position
                 this.npc.setFlipX(true);
                 this.npc.setVelocity(-speed, 0);
                 this.npc.play('npc-walk-right', true); // Use walk-right animation but flipped
-                
+
                 this.time.delayedCall(walkDuration, () => {
                     if (!this.npc || !this.npc.active) return;
-                    
+
                     // Step 4: Stop at starting position and idle
                     this.npc.setVelocity(0, 0);
                     this.npc.setFlipX(false);
                     this.npc.play('npc-idle-right', true);
-                    
+
                     // Wait 4 seconds then loop
                     this.time.delayedCall(4000, () => {
                         this.startNPCPatrolCycle();
@@ -876,23 +909,22 @@ export class FarmScene extends Scene
         });
     }
 
-    private moveNPCRandomly(): void
-    {
+    private moveNPCRandomly(): void {
         if (!this.npc || !this.npc.active) return;
-        
+
         // Randomly decide to walk or idle
         const shouldWalk = Math.random() > 0.6;
-        
+
         if (shouldWalk) {
             // Choose a random direction
             const directions = ['up', 'down', 'left', 'right'];
             const direction = Phaser.Utils.Array.GetRandom(directions);
             this.npc.setData('direction', direction);
-            
+
             const speed = 60;
             let velocityX = 0;
             let velocityY = 0;
-            
+
             switch (direction) {
                 case 'up':
                     velocityY = -speed;
@@ -909,10 +941,10 @@ export class FarmScene extends Scene
                     this.npc.setFlipX(false);
                     break;
             }
-            
+
             this.npc.setVelocity(velocityX, velocityY);
             this.npc.play(`npc-walk-${direction}`, true);
-            
+
             // Stop after a random time
             this.time.delayedCall(Phaser.Math.Between(1000, 2500), () => {
                 if (this.npc && this.npc.active) {
@@ -929,8 +961,7 @@ export class FarmScene extends Scene
         }
     }
 
-    private setupInputs(): void
-    {
+    private setupInputs(): void {
         this.cursors = this.input.keyboard!.createCursorKeys();
         this.wasd = {
             up: this.input.keyboard!.addKey('W'),
@@ -943,7 +974,7 @@ export class FarmScene extends Scene
         this.escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
         this.attackKey = this.input.keyboard!.addKey('Q');
         this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-        
+
         this.escKey.on('down', () => {
             if (this.isChatting) {
                 this.endChat();
@@ -951,9 +982,9 @@ export class FarmScene extends Scene
                 this.exitFarm();
             }
         });
-        
+
         this.spaceKey.on('down', () => this.tryStartChat());
-        
+
         // Listen for keyboard input for chat
         this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
             if (this.isChatting) {
@@ -962,8 +993,7 @@ export class FarmScene extends Scene
         });
     }
 
-    private setupCamera(): void
-    {
+    private setupCamera(): void {
         this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
         // Set camera bounds to match map size
         this.cameras.main.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
@@ -974,8 +1004,7 @@ export class FarmScene extends Scene
         this.scale.on('resize', this.handleResize, this);
     }
 
-    private updateCameraZoom(): void
-    {
+    private updateCameraZoom(): void {
         const gameWidth = this.scale.gameSize.width;
         const gameHeight = this.scale.gameSize.height;
 
@@ -988,23 +1017,38 @@ export class FarmScene extends Scene
         this.cameras.main.setZoom(zoom);
     }
 
-    private handleResize(gameSize: Phaser.Structs.Size): void
-    {
+    private handleResize(gameSize: Phaser.Structs.Size): void {
         // Update camera bounds to match new game size
         this.cameras.main.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
 
         // Update zoom based on new screen size
         this.updateCameraZoom();
+
+        // Update UI scene on resize
+        const uiScene = this.scene.get(SCENE_KEYS.UI);
+        if (uiScene && uiScene.scene) {
+            uiScene.scene.restart();
+        }
+
+        // Debug log
+        console.log('Window resized:', {
+            width: gameSize.width,
+            height: gameSize.height,
+            camera: this.cameras.main ? {
+                width: this.cameras.main.width,
+                height: this.cameras.main.height,
+                zoom: this.cameras.main.zoom
+            } : 'No camera'
+        });
     }
 
-    private handlePlayerMovement(): void
-    {
+    private handlePlayerMovement(): void {
         // Check if attack key is being held down
         if (this.attackKey.isDown) {
             this.handleAttack();
             return;
         }
-        
+
         const left = this.cursors.left.isDown || this.wasd.left.isDown;
         const right = this.cursors.right.isDown || this.wasd.right.isDown;
         const up = this.cursors.up.isDown || this.wasd.up.isDown;
@@ -1054,29 +1098,28 @@ export class FarmScene extends Scene
                     if (targetTile && this.farmableTileIndices.has(targetTile.index) && (!cropTile || cropTile.index === -1)) {
                         // Plant a crop and immediately stop searching
                         this.cropsLayer.putTileAt(1774, x, y);
-                        return; 
+                        return;
                     }
                 }
             }
         });
     }
 
-    private updatePlayerAnimation(isRunning: boolean): void
-    {
+    private updatePlayerAnimation(isRunning: boolean): void {
         // Don't update animation if attacking
         if (this.isAttacking) {
             return;
         }
-        
+
         const body = this.player.body as Phaser.Physics.Arcade.Body;
         const isMoving = body.velocity.x !== 0 || body.velocity.y !== 0;
-        
+
         if (this.currentDirection === 'left') {
             this.player.setFlipX(true);
         } else {
             this.player.setFlipX(false);
         }
-        
+
         if (!isMoving) {
             this.player.play(`idle-${this.currentDirection}`, true);
         } else if (isRunning) {
@@ -1089,67 +1132,67 @@ export class FarmScene extends Scene
     private handleAttack(): void {
         // Stop player movement during attack
         this.player.setVelocity(0, 0);
-        
+
         // If already attacking, just continue
         if (this.isAttacking) {
             return;
         }
-        
+
         this.isAttacking = true;
-        
+
         // Check for chickens in attack range
         this.checkAttackHit();
-        
+
         // Switch to attack texture
         this.player.setTexture('player_attack', 0);
-        
+
         // Play attack animation based on current direction (loop while holding)
         const attackAnim = `attack-${this.currentDirection}`;
         this.player.play(attackAnim, true);
-        
+
         // Listen for animation complete to loop or stop
         this.player.on('animationcomplete', this.onAttackComplete, this);
     }
-    
+
     private checkAttackHit(): void {
         const attackRange = 50;
-        
+
         this.chickens.forEach(chicken => {
             if (!chicken.active) return;
-            
+
             const distance = Phaser.Math.Distance.Between(
                 this.player.x, this.player.y,
                 chicken.x, chicken.y
             );
-            
+
             if (distance < attackRange) {
                 this.damageChicken(chicken);
             }
         });
     }
-    
+
     private damageChicken(chicken: Phaser.Physics.Arcade.Sprite): void {
         const currentHealth = chicken.getData('health');
         const newHealth = currentHealth - 1;
         chicken.setData('health', newHealth);
-        
+
         // Flash red when hit
         chicken.setTint(0xff0000);
         this.time.delayedCall(200, () => {
             chicken.clearTint();
         });
-        
+
         if (newHealth <= 0) {
             // Chicken dies
             chicken.setVelocity(0, 0);
             chicken.setAlpha(0.5);
-            
+
             // Cancel the movement timer to prevent callbacks on destroyed object
             const movementTimer = chicken.getData('movementTimer');
             if (movementTimer) {
                 movementTimer.destroy();
             }
-            
+
             // Fade out and destroy
             this.tweens.add({
                 targets: chicken,
@@ -1161,7 +1204,7 @@ export class FarmScene extends Scene
             });
         }
     }
-    
+
     private onAttackComplete(): void {
         // If Q is still being held, play the attack animation again (loop)
         if (this.attackKey.isDown) {
@@ -1181,13 +1224,13 @@ export class FarmScene extends Scene
 
     private tryStartChat(): void {
         if (this.isChatting) return;
-        
+
         // Check if player is near NPC
         const distance = Phaser.Math.Distance.Between(
             this.player.x, this.player.y,
             this.npc.x, this.npc.y
         );
-        
+
         if (distance < 80) {
             this.startChat();
         }
@@ -1196,16 +1239,16 @@ export class FarmScene extends Scene
     private startChat(): void {
         this.isChatting = true;
         this.playerInput = '';
-        
+
         // Stop NPC movement and pause patrol
         this.npc.setVelocity(0, 0);
         this.npc.setData('patrolPaused', true);
         const currentDirection = this.npc.getData('direction') || 'right';
         this.npc.play(`npc-idle-${currentDirection}`, true);
-        
+
         // Stop player movement
         this.player.setVelocity(0, 0);
-        
+
         // Create chat bubble
         this.createChatBubble();
     }
@@ -1214,21 +1257,21 @@ export class FarmScene extends Scene
         const bubbleWidth = 100;
         const bubbleHeight = 30;
         const bubblePadding = 6;
-        
+
         // Create chatbox indicator image beside player's head (closer to character)
         const chatboxIndicator = this.add.image(this.player.x + 5, this.player.y - 5, 'chatbox');
         chatboxIndicator.setScale(0.25); // Small indicator
         chatboxIndicator.setDepth(2000);
         this.player.setData('chatboxIndicator', chatboxIndicator);
-        
+
         // Create player's chat bubble with chatdialog image
         const playerBubble = this.add.container(this.player.x, this.player.y - 10);
         playerBubble.setDepth(2000);
-        
+
         // Add chatdialog image
         const chatDialogImage = this.add.image(0, -20, 'chatdialog');
         chatDialogImage.setScale(0.15); // Scale down from 905x276
-        
+
         this.chatText = this.add.text(
             0,
             -20,
@@ -1240,19 +1283,19 @@ export class FarmScene extends Scene
             }
         );
         this.chatText.setOrigin(0.5, 0.5);
-        
+
         playerBubble.add([chatDialogImage, this.chatText]);
         this.player.setData('chatBubble', playerBubble);
-        
+
         // Create NPC's chat bubble (hidden initially)
         this.chatBubble = this.add.container(this.npc.x, this.npc.y - 50);
         this.chatBubble.setDepth(2000);
         this.chatBubble.setVisible(false);
-        
+
         // Add chatdialog image for NPC
         const npcDialogImage = this.add.image(0, -20, 'chatdialog');
         npcDialogImage.setScale(0.15); // Scale down from 905x276
-        
+
         this.npcResponse = this.add.text(
             0,
             -20,
@@ -1265,7 +1308,7 @@ export class FarmScene extends Scene
             }
         );
         this.npcResponse.setOrigin(0.5, 0.5);
-        
+
         this.chatBubble.add([npcDialogImage, this.npcResponse]);
     }
 
@@ -1294,23 +1337,23 @@ export class FarmScene extends Scene
 
     private sendMessage(): void {
         if (this.playerInput.trim().length === 0) return;
-        
+
         // Show the final message in player's bubble
         this.chatText.setText(this.playerInput);
-        
+
         // Hide chatbox indicator (stop showing typing icon)
         const chatboxIndicator = this.player.getData('chatboxIndicator');
         if (chatboxIndicator) {
             chatboxIndicator.setVisible(false);
         }
-        
+
         // Allow player to move again
         this.isChatting = false;
-        
+
         // NPC responds with "Deal!"
         this.time.delayedCall(500, () => {
             this.chatBubble.setVisible(true);
-            
+
             // Close chat after showing response (this will hide both bubbles)
             this.time.delayedCall(2000, () => {
                 this.endChat();
@@ -1321,26 +1364,26 @@ export class FarmScene extends Scene
     private endChat(): void {
         this.isChatting = false;
         this.playerInput = '';
-        
+
         // Destroy chatbox indicator
         const chatboxIndicator = this.player.getData('chatboxIndicator');
         if (chatboxIndicator) {
             chatboxIndicator.destroy();
             this.player.setData('chatboxIndicator', null);
         }
-        
+
         // Destroy player chat bubble
         const playerBubble = this.player.getData('chatBubble');
         if (playerBubble) {
             playerBubble.destroy();
             this.player.setData('chatBubble', null);
         }
-        
+
         // Destroy NPC chat bubble
         if (this.chatBubble) {
             this.chatBubble.destroy();
         }
-        
+
         // Resume NPC patrol only after everything is cleaned up
         this.time.delayedCall(100, () => {
             this.npc.setData('patrolPaused', false);
@@ -1349,14 +1392,13 @@ export class FarmScene extends Scene
 
     private exitFarm(): void {
         this.cameras.main.fadeOut(500, 0, 0, 0);
-        
+
         this.cameras.main.once('camerafadeoutcomplete', () => {
             this.scene.start('WorldSelectionScene');
         });
     }
 
-    destroy(): void
-    {
+    destroy(): void {
         // Clean up resize event listener
         this.scale.off('resize', this.handleResize, this);
         this.windTimer.destroy();
