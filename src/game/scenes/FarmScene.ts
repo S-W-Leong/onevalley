@@ -72,6 +72,7 @@ export class FarmScene extends Scene {
     private playerCurrentHp: number = 100;
     private lastDamageTime: number = 0;
     private damageInvincibilityDuration: number = 1000; // 1 second invincibility after taking damage
+    private isDead: boolean = false;
 
     // Background music
     private bgMusic?: Phaser.Sound.BaseSound;
@@ -1749,6 +1750,12 @@ export class FarmScene extends Scene {
     }
 
     private handlePlayerMovement(): void {
+        // Don't move if dead
+        if (this.isDead) {
+            this.player.setVelocity(0, 0);
+            return;
+        }
+
         // Disable movement if marketplace or backpack is open
         const uiScene = this.scene.get(SCENE_KEYS.UI) as any;
         if (uiScene && (uiScene.isMarketplaceOpen() || uiScene.isBackpackOpen())) {
@@ -1806,6 +1813,11 @@ export class FarmScene extends Scene {
         player: Phaser.GameObjects.GameObject | Phaser.Tilemaps.Tile,
         enemy: Phaser.GameObjects.GameObject | Phaser.Tilemaps.Tile
     ): void {
+        // Don't take damage if already dead
+        if (this.isDead) {
+            return;
+        }
+
         const enemySprite = enemy as Enemy;
         
         // Check if enemy is dead
@@ -1839,7 +1851,7 @@ export class FarmScene extends Scene {
         console.log(`Player hit! HP: ${this.playerCurrentHp}/${this.playerMaxHp}`);
 
         // Check if player died
-        if (this.playerCurrentHp <= 0) {
+        if (this.playerCurrentHp <= 0 && !this.isDead) {
             this.handlePlayerDeath();
         }
 
@@ -1860,19 +1872,29 @@ export class FarmScene extends Scene {
     private handlePlayerDeath(): void {
         console.log('Player died!');
         this.playerCurrentHp = 0;
+        this.isDead = true;
         
         // Stop player movement
         this.player.setVelocity(0, 0);
         
-        // You could add death animation or respawn logic here
-        // For now, just respawn after a delay
-        this.time.delayedCall(2000, () => {
+        // Play dead animation
+        this.player.play('dead', true);
+        
+        // Wait for death animation to complete before respawning
+        this.player.once('animationcomplete', () => {
+            // Respawn after animation completes
+            this.isDead = false;
             this.playerCurrentHp = this.playerMaxHp;
-            this.player.setPosition(400, 400);
+            this.player.setPosition(400, 400); // Respawn at starting position
+            this.player.play('idle-down');
+            
+            // Update UI
             EventBus.emit('player-hp-changed', {
                 current: this.playerCurrentHp,
                 max: this.playerMaxHp
             });
+            
+            console.log('Player respawned!');
         });
     }
 
@@ -1899,8 +1921,8 @@ export class FarmScene extends Scene {
     }
 
     private updatePlayerAnimation(isRunning: boolean): void {
-        // Don't update animation if attacking
-        if (this.isAttacking) {
+        // Don't update animation if dead or attacking
+        if (this.isDead || this.isAttacking) {
             return;
         }
 
