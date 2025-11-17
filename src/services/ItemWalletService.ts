@@ -5,7 +5,7 @@
  * handles inventory synchronization and item state management.
  */
 
-import { SuiClient } from '@onelabs/sui/dist/esm/client';
+import { SuiClient } from '@onelabs/sui/client';
 import {
   FrontendItem,
   GameItem,
@@ -21,7 +21,7 @@ import {
 } from '../types/onechain';
 
 // Configuration
-const ONEVALLEY_PACKAGE_ID = '0x...'; // Replace with actual deployed package ID
+const ONEVALLEY_PACKAGE_ID = '0x9d3d2c56c66134068a6be7ded289cf1915939f0b65a46483d3414a6da5f3ef89';
 const ITEMS_MODULE = `${ONEVALLEY_PACKAGE_ID}::items`;
 
 // Item sprite mapping (connect to game assets)
@@ -125,7 +125,7 @@ export class ItemWalletService {
       // Get owned objects with pagination
       const allItems: FrontendItem[] = [];
       let hasNextPage = true;
-      let cursor: string | undefined;
+      let cursor: string | null | undefined;
 
       while (hasNextPage) {
         const response = await this.client.getOwnedObjects({

@@ -5,8 +5,8 @@
  * for escrow-based trading functionality.
  */
 
-import { Transaction } from '@onelabs/sui/dist/esm/transactions';
-import { SuiClient } from '@onelabs/sui/dist/esm/client';
+import { Transaction } from '@onelabs/sui/transactions';
+import { SuiClient } from '@onelabs/sui/client';
 import {
   Key,
   Locked,
@@ -17,7 +17,7 @@ import {
 } from '../types/onechain';
 
 // Configuration
-const ONEVALLEY_PACKAGE_ID = '0x...'; // Replace with actual deployed package ID
+const ONEVALLEY_PACKAGE_ID = '0x9d3d2c56c66134068a6be7ded289cf1915939f0b65a46483d3414a6da5f3ef89';
 const LOCK_MODULE = `${ONEVALLEY_PACKAGE_ID}::lock`;
 
 export interface LockResult {
@@ -52,6 +52,7 @@ export interface LockingStats {
 
 export class ItemLockingService {
   private client: SuiClient;
+  private signer: any | null = null; // Signer from OneChain SDK
   private currentAddress: string | null = null;
   private lockedItemsCache: Map<string, LockedItemData> = new Map();
   private lockExpiryTime: number = 300000; // 5 minutes default
@@ -61,6 +62,13 @@ export class ItemLockingService {
     if (lockExpiryTime) {
       this.lockExpiryTime = lockExpiryTime;
     }
+  }
+
+  /**
+   * Set the signer for transaction execution
+   */
+  setSigner(signer: any) {
+    this.signer = signer;
   }
 
   /**
@@ -103,7 +111,10 @@ export class ItemLockingService {
     });
 
     // Execute transaction
-    const result = await this.client.signAndExecuteTransaction({
+    if (!this.signer) {
+      throw new Error('No signer available for transaction execution');
+    }
+    const result = await this.signer.signAndExecuteTransaction({
       transaction: tx,
       options: {
         showObjectChanges: true,
@@ -120,13 +131,13 @@ export class ItemLockingService {
 
     // Extract created object IDs
     const objectChanges = result.objectChanges || [];
-    const lockedItemChange = objectChanges.find(change =>
+    const lockedItemChange = objectChanges.find((change: any): change is Extract<typeof change, { type: 'created' }> =>
       change.type === 'created' &&
       (change.objectType.includes('Locked') ||
        change.objectType.includes(`${ONEVALLEY_PACKAGE_ID}::lock::Locked`))
     );
 
-    const keyChange = objectChanges.find(change =>
+    const keyChange = objectChanges.find((change: any): change is Extract<typeof change, { type: 'created' }> =>
       change.type === 'created' &&
       (change.objectType.includes('Key') ||
        change.objectType.includes(`${ONEVALLEY_PACKAGE_ID}::lock::Key`))
@@ -188,7 +199,10 @@ export class ItemLockingService {
     // Transfer the unlocked item back to the owner
     tx.transferObjects([unlockedItem], this.currentAddress);
 
-    const result = await this.client.signAndExecuteTransaction({
+    if (!this.signer) {
+      throw new Error('No signer available for transaction execution');
+    }
+    const result = await this.signer.signAndExecuteTransaction({
       transaction: tx,
       options: {
         showObjectChanges: true,
@@ -245,7 +259,7 @@ export class ItemLockingService {
    */
   isItemLocked(itemId: string): boolean {
     const lockData = this.lockedItemsCache.get(itemId);
-    return lockData ? lockData.item.locked : false;
+    return lockData ? lockData.item.locked === true : false;
   }
 
   /**
@@ -471,7 +485,11 @@ export class ItemLockingService {
         return false;
       }
 
-      const fields = (lockedObject.data.content.fields as any);
+      if (!('fields' in lockedObject.data.content)) {
+        return false;
+      }
+
+      const fields = lockedObject.data.content.fields as any;
       return fields.key === keyId;
     } catch (error) {
       console.error('Error validating key for lock:', error);

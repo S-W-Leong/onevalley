@@ -401,8 +401,7 @@ export class P2PTradingService {
         acceptorLocks[0].keyId, // Use acceptor's key to lock proposer's items
         'locked_proposer_items', // Would be actual locked object ID
         acceptorLocks[0].keyId, // Exchange key
-        this.currentAddress!, // Recipient is the acceptor
-        '0x...' // Custodian address
+        this.currentAddress! // Recipient is the acceptor
       );
 
       // Step 4: Execute swap through custodian
@@ -502,7 +501,7 @@ export class P2PTradingService {
       const proposerTypes = new Set(proposal.proposer_items.map(item => item.item_type));
 
       const typeMatch = [...playerTypes].filter(type => requestedTypes.has(type)).length +
-                      [...proposerTypes].filter(type => playerTypes.some(item => item.item_type === type)).length;
+                      [...proposerTypes].filter(type => playerTypes.has(type)).length;
 
       score += typeMatch * 10;
 
@@ -556,15 +555,19 @@ export class P2PTradingService {
 
     const mostTradedItems = Array.from(itemTradeCounts.entries())
       .map(([itemId, data]) => ({ item_id: itemId, ...data }))
-      .sort((a, b) => b.trade_count - a.trade_count)
+      .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
     return {
       total_proposals: allProposals.length,
       active_proposals: activeProposals.length,
       completed_trades: completedTrades.length,
-      average_trade_value,
-      most_traded_items
+      average_trade_value: averageTradeValue,
+      most_traded_items: mostTradedItems.map(item => ({
+        item_id: item.item_id,
+        name: item.name,
+        trade_count: item.count
+      }))
     };
   }
 

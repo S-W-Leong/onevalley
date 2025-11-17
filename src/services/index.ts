@@ -5,7 +5,7 @@
  * Includes setup utilities and singleton management.
  */
 
-import { SuiClient } from '@onelabs/sui/dist/esm/client';
+import { SuiClient } from '@onelabs/sui/client';
 import { OneChainTransactionService } from './OneChainTransactionService';
 import { ItemWalletService } from './ItemWalletService';
 import { ItemLockingService } from './ItemLockingService';
@@ -17,9 +17,9 @@ import { TradeEventService } from './TradeEventService';
 export const ONECHAIN_CONFIG = {
   NETWORK: process.env.NEXT_PUBLIC_ONECHAIN_NETWORK || 'devnet',
   RPC_URL: process.env.NEXT_PUBLIC_ONECHAIN_RPC_URL || 'https://fullnode.devnet.sui.io:443',
-  PACKAGE_ID: process.env.NEXT_PUBLIC_ONEVALLEY_PACKAGE_ID || '0x...', // Replace with actual package ID
-  CUSTODIAN_ID: process.env.NEXT_PUBLIC_ONEVALLEY_CUSTODIAN_ID || '0x...', // Replace with actual custodian ID
-  FORGE_ID: process.env.NEXT_PUBLIC_ONEVALLEY_FORGE_ID || '0x...', // Replace with actual forge ID
+  PACKAGE_ID: process.env.NEXT_PUBLIC_ONEVALLEY_PACKAGE_ID || '0x9d3d2c56c66134068a6be7ded289cf1915939f0b65a46483d3414a6da5f3ef89',
+  CUSTODIAN_ID: process.env.NEXT_PUBLIC_ONEVALLEY_CUSTODIAN_ID || '0xf70caa11d1b82cfeeef2f5385e4798d95f1f829dd3dcf81535af5ce7e24d24cd',
+  FORGE_ID: process.env.NEXT_PUBLIC_ONEVALLEY_FORGE_ID || '0x836264cf0ef7e2c8a98be4d11f59ec02f4c801c1dc95a53c43482c34ec2c0e58',
   GAS_BUDGET: parseInt(process.env.NEXT_PUBLIC_GAS_BUDGET || '10000000'), // 0.01 SUI
 };
 

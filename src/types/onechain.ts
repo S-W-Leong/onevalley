@@ -223,14 +223,16 @@ export interface TradeItem extends FrontendItem {
   selected: boolean;
   proposed_value?: number;
   requested_value?: number;
+  trade_count?: number;
 }
 
 export interface TradeProposalFrontend {
   id: string;
   proposer: Address;
+  target_player?: Address;
   proposer_items: TradeItem[];
   requested_items: TradeItem[];
-  status: 'pending' | 'accepted' | 'rejected' | 'completed' | 'expired';
+  status: 'pending' | 'accepted' | 'rejected' | 'completed' | 'expired' | 'cancelled';
   created_at: number;
   expires_at: number;
   message?: string;

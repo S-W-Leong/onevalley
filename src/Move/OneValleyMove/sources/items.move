@@ -2,9 +2,6 @@
 /// Implements in-game items as NFTs with trading capabilities
 module one_valley_gamefi::items {
     use std::string::String;
-    use one::object::{Self, UID};
-    use one::transfer;
-    use one::tx_context::{Self, TxContext};
     use one::event;
 
     // === Constants ===
@@ -22,8 +19,7 @@ module one_valley_gamefi::items {
     // === Errors ===
     const EInvalidRarity: u64 = 0;
     const EInvalidItemType: u64 = 1;
-    const EUnauthorizedMinting: u64 = 2;
-    const EInvalidStatsLength: u64 = 3;
+        const EInvalidStatsLength: u64 = 3;
 
     // === Structs ===
 
@@ -199,7 +195,7 @@ module one_valley_gamefi::items {
     }
 
     /// Update item ownership history when transferred
-    public fun update_ownership<T: key + store>(item: &mut GameItem, new_owner: address) {
+    public fun update_ownership(item: &mut GameItem, new_owner: address) {
         vector::push_back(&mut item.owner_history, new_owner);
     }
 

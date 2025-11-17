@@ -10,7 +10,9 @@ import {
   TradeProposalFrontend,
   EscrowedItemFrontend,
   ITEM_TYPES,
-  RARITY_LEVELS
+  RARITY_LEVELS,
+  ItemType,
+  RarityLevel
 } from '../types/onechain';
 import { OneChainTransactionService } from './OneChainTransactionService';
 import { ItemWalletService } from './ItemWalletService';
@@ -20,8 +22,8 @@ export interface NPCItem {
   id: string;
   name: string;
   description: string;
-  item_type: number;
-  rarity: number;
+  item_type: ItemType;
+  rarity: RarityLevel;
   stats: number[];
   sprite_key: string;
   quantity: number;
@@ -55,6 +57,20 @@ export interface NPCTradeConfig {
   max_trade_slots: number;
   escrow_required: boolean;
 }
+
+type TradeBalanceSummary = {
+  playerValue: number;
+  npcValue: number;
+  isBalanced: boolean;
+  difference: number;
+};
+
+type NPCTradeHistoryEntry = {
+  timestamp: number;
+  player_items: FrontendItem[];
+  npc_items: FrontendItem[];
+  result: 'completed' | 'cancelled';
+};
 
 export class NPCTradingService {
   private oneChainService: OneChainTransactionService;
@@ -152,7 +168,7 @@ export class NPCTradingService {
       stats: item.stats,
       minted_by: `npc_${npcName.toLowerCase()}`,
       mint_timestamp: Date.now(),
-      owner_history: [],
+      owner_history: [] as string[],
       sprite_key: item.sprite_key,
       stack_size: item.quantity,
       equipped: false,
@@ -179,12 +195,7 @@ export class NPCTradingService {
     playerItemIds: string[],
     npcItemIds: string[],
     npcName: string = 'Herman'
-  ): {
-    playerValue: number;
-    npcValue: number;
-    isBalanced: boolean;
-    difference: number;
-  } {
+  ): TradeBalanceSummary {
     const config = this.getNPCConfig(npcName);
 
     // Calculate player item values (base on rarity and stats)
@@ -225,7 +236,7 @@ export class NPCTradingService {
     let baseValue = 1;
 
     // Rarity multiplier
-    const rarityMultipliers = {
+    const rarityMultipliers: Record<RarityLevel, number> = {
       [RARITY_LEVELS.COMMON]: 1,
       [RARITY_LEVELS.RARE]: 5,
       [RARITY_LEVELS.EPIC]: 20,
@@ -235,7 +246,7 @@ export class NPCTradingService {
     baseValue *= rarityMultipliers[item.rarity];
 
     // Item type multiplier
-    const typeMultipliers = {
+    const typeMultipliers: Record<ItemType, number> = {
       [ITEM_TYPES.WEAPON]: 2,
       [ITEM_TYPES.ARMOR]: 1.5,
       [ITEM_TYPES.CONSUMABLE]: 1,
@@ -261,7 +272,7 @@ export class NPCTradingService {
   ): Promise<{
     valid: boolean;
     error?: string;
-    balance?: ReturnType<typeof this.calculateTradeBalance>;
+    balance?: TradeBalanceSummary;
   }> {
     if (!this.currentAddress) {
       return { valid: false, error: 'No wallet connected' };
@@ -523,12 +534,22 @@ export class NPCTradingService {
   /**
    * Get trade history with NPC
    */
-  getTradeHistory(npcName: string = 'Herman') {
+  getTradeHistory(npcName: string = 'Herman'): NPCTradeHistoryEntry[] {
     // This would be stored in local storage or fetched from a backend
     const historyKey = `trade_history_${npcName.toLowerCase()}`;
     const history = localStorage.getItem(historyKey);
 
-    return history ? JSON.parse(history) : [];
+    if (!history) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(history);
+      return Array.isArray(parsed) ? (parsed as NPCTradeHistoryEntry[]) : [];
+    } catch (error) {
+      console.warn('Failed to parse NPC trade history', error);
+      return [];
+    }
   }
 
   /**

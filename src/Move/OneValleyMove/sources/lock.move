@@ -4,9 +4,7 @@
 /// This is used to commit to swapping a particular object in a
 /// particular, fixed state during escrow.
 module one_valley_gamefi::lock {
-    use one::object::{Self, ID, UID};
-    use one::tx_context::TxContext;
-
+    
     // === Errors ===
     const ELockKeyMismatch: u64 = 0;
 

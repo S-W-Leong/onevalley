@@ -5,9 +5,9 @@
  * escrow-based trading functionality for OneValley GameFi items.
  */
 
-import { Transaction } from '@onelabs/sui/dist/esm/transactions';
-import { SuiClient } from '@onelabs/sui/dist/esm/client';
-import { fromB64 } from '@onelabs/sui/dist/esm/utils';
+import { Transaction } from '@onelabs/sui/transactions';
+import { SuiClient } from '@onelabs/sui/client';
+import { fromB64 } from '@onelabs/sui/utils';
 
 // OneChain wallet SDK types
 export interface Signer {
@@ -38,9 +38,9 @@ export interface Signer {
   }>;
 }
 
-// OneValley Move contract addresses (replace with actual deployed addresses)
-const ONEVALLEY_PACKAGE_ID = '0x...'; // Replace with actual package ID
-const GAME_CUSTODIAN_ID = '0x...'; // Replace with actual custodian ID
+// OneValley Move contract addresses (deployed on devnet)
+const ONEVALLEY_PACKAGE_ID = '0x9d3d2c56c66134068a6be7ded289cf1915939f0b65a46483d3414a6da5f3ef89';
+const GAME_CUSTODIAN_ID = '0xf70caa11d1b82cfeeef2f5385e4798d95f1f829dd3dcf81535af5ce7e24d24cd';
 
 // Move module targets
 const LOCK_MODULE = `${ONEVALLEY_PACKAGE_ID}::lock`;
@@ -305,7 +305,10 @@ export class OneChainTransactionService {
     // Note: Since we don't have direct access to address from signer,
     // we'll need to handle transfers differently or get address from signer
     // For now, this is a limitation that needs wallet SDK integration
-    tx.transferObjects([returnedItem], '0x...'); // This will need to be updated
+    if (!this.currentAddress) {
+      throw new Error('No current address set for transfer');
+    }
+    tx.transferObjects([returnedItem], this.currentAddress); // Use current address
 
     const result = await this.signer.signAndExecuteTransaction({
       transaction: tx,
@@ -350,8 +353,10 @@ export class OneChainTransactionService {
       const items: OneValleyItem[] = [];
 
       for (const object of objects.data) {
-        if (object.data?.content?.type === `${ITEMS_MODULE}::GameItem`) {
-          const fields = (object.data.content.fields as any);
+        if (object.data?.content && 'type' in object.data.content &&
+            object.data.content.type === `${ITEMS_MODULE}::GameItem` &&
+            'fields' in object.data.content) {
+          const fields = object.data.content.fields as any;
           items.push({
             id: object.data.objectId,
             item_type: fields.item_type,
@@ -397,8 +402,11 @@ export class OneChainTransactionService {
       const escrowedItems: EscrowedItem[] = [];
 
       for (const object of escrows.data) {
-        if (object.data?.content?.type.includes('TradeEscrow')) {
-          const fields = (object.data.content.fields as any);
+        if (object.data?.content && 'type' in object.data.content &&
+            typeof object.data.content.type === 'string' &&
+            object.data.content.type.includes('TradeEscrow') &&
+            'fields' in object.data.content) {
+          const fields = object.data.content.fields as any;
           escrowedItems.push({
             id: object.data.objectId,
             sender: fields.sender,
