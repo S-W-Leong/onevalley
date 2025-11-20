@@ -26,6 +26,28 @@ These guides explain:
 - How React and Phaser communicate
 - How to add new features
 
+## 🎮 Game Controls
+
+### Movement
+- **W / Arrow Up** - Move Up
+- **A / Arrow Left** - Move Left
+- **S / Arrow Down** - Move Down
+- **D / Arrow Right** - Move Right
+- **Shift** - Hold to Run
+
+### Actions
+- **Q** - Attack (hold to continuously attack)
+- **E** - Interact with NPCs/Objects
+- **R** - Cut Trees 🪓
+- **T** - Water Plants 💧
+- **Space** - Start Chat with NPCs
+
+### UI Controls
+- **B** - Toggle Backpack/Inventory
+- **F** - Open Crafting Table 🔨
+- **1-8** - Quick use items from hotbar
+- **ESC** - Close UI Windows/Exit Farm
+
 ## Requirements
 
 [Node.js](https://nodejs.org) is required to install dependencies and run scripts via `npm`.

@@ -347,6 +347,28 @@ An animation is like a flipbook. You show frame 0, then frame 3, then frame 0 ag
 
 ## Part 7: Player Movement (The Controls)
 
+### 🎮 Complete Keyboard Controls
+
+#### Movement
+- **W / Arrow Up** - Move Up
+- **A / Arrow Left** - Move Left
+- **S / Arrow Down** - Move Down
+- **D / Arrow Right** - Move Right
+- **Shift** - Hold to Run
+
+#### Actions
+- **Q** - Attack (hold to continuously attack)
+- **E** - Interact with NPCs/Objects
+- **R** - Cut Trees 🪓
+- **T** - Water Plants 💧
+- **Space** - Start Chat with NPCs
+
+#### UI Controls
+- **B** - Toggle Backpack/Inventory
+- **F** - Open Crafting Table 🔨
+- **1-8** - Quick use items from hotbar
+- **ESC** - Close UI Windows/Exit Farm
+
 ### Step 1: Set Up Input Listeners
 
 ```typescript
@@ -364,6 +386,13 @@ private setupInputs(): void {
     
     // Listen for Shift key (for running)
     this.shiftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+    
+    // Action keys
+    this.interactKey = this.input.keyboard!.addKey('E');
+    this.attackKey = this.input.keyboard!.addKey('Q');
+    this.cutKey = this.input.keyboard!.addKey('R');
+    this.waterKey = this.input.keyboard!.addKey('T');
+    this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 }
 ```
 

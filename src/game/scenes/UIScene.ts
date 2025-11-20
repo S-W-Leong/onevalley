@@ -523,8 +523,8 @@ export class UIScene extends Phaser.Scene {
             }
         });
 
-        // Add 'C' key to toggle crafting (always shows backpack with it)
-        this.craftingKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+        // Add 'F' key to toggle crafting (always shows backpack with it)
+        this.craftingKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F);
         this.craftingKey.on('down', () => {
             const farmScene = this.scene.get(SCENE_KEYS.FARM);
             if (farmScene && farmScene.scene.isActive()) {
@@ -2904,10 +2904,19 @@ export class UIScene extends Phaser.Scene {
         this.guideMenuContainer.add(title);
 
         // Guide content
-        const guideText = `🎮 CONTROLS
-W/A/S/D - Move  |  SHIFT - Run  |  1-8 - Select slots
+        const guideText = `🎮 MOVEMENT CONTROLS
+W/A/S/D or Arrow Keys - Move  |  SHIFT - Run
+
+⚔️ ACTION CONTROLS
+Q - Attack (hold for continuous)  |  E - Interact
+R - Cut Trees 🪓  |  T - Water Plants 💧
+SPACE - Chat with NPCs
+
+🎒 INVENTORY & UI
+B - Toggle Backpack  |  F - Open Crafting Table 🔨
+1-8 - Quick use hotbar items  |  ESC - Close menus/Exit
 Left Click - Pick/Place items  |  Right Click - Split stack
-Double Click - Group same items  |  B - Backpack  |  ESC - Close
+Double Click - Group same items
 
 📦 INVENTORY (Max 99 per stack)
 • Item Bar: 8 quick slots at bottom
@@ -2926,9 +2935,9 @@ Double Click - Group same items  |  B - Backpack  |  ESC - Close
 
 💡 TIPS
 • Stack items to save space
-• Use backpack for storage
+• Use F to craft items from resources
 • Double-click to organize quickly
-• Right-click to split for trading`;
+• Press T near plants to water them`;
 
         const content = this.add.text(0, 18, guideText, {
             fontSize: '14px',

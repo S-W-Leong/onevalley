@@ -37,6 +37,7 @@ export class FarmScene extends Scene {
     private attackKey!: Phaser.Input.Keyboard.Key;
     private spaceKey!: Phaser.Input.Keyboard.Key;
     private cutKey!: Phaser.Input.Keyboard.Key;
+    private waterKey!: Phaser.Input.Keyboard.Key;
 
     // Particle properties
     private particleEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -53,6 +54,7 @@ export class FarmScene extends Scene {
     private initialZoom: number = 3;
     private isAttacking: boolean = false;
     private isCutting: boolean = false;
+    private isWatering: boolean = false;
     private treeLayers: Phaser.Tilemaps.TilemapLayer[] = [];
     private tileCollisionBodies: Map<string, Phaser.GameObjects.GameObject[]> = new Map();
 
@@ -1043,6 +1045,33 @@ export class FarmScene extends Scene {
             frameRate: 8,
             repeat: 0
         });
+
+        // Watering animations (using player_actions sprite sheet)
+        // Frame 18-19: watering face down, 20-21: face up, 22-23: face side
+        this.anims.create({
+            key: 'water-down',
+            frames: this.anims.generateFrameNumbers('player_actions', { start: 18, end: 19 }),
+            frameRate: 8,
+            repeat: 0
+        });
+        this.anims.create({
+            key: 'water-up',
+            frames: this.anims.generateFrameNumbers('player_actions', { start: 20, end: 21 }),
+            frameRate: 8,
+            repeat: 0
+        });
+        this.anims.create({
+            key: 'water-left',
+            frames: this.anims.generateFrameNumbers('player_actions', { start: 22, end: 23 }),
+            frameRate: 8,
+            repeat: 0
+        });
+        this.anims.create({
+            key: 'water-right',
+            frames: this.anims.generateFrameNumbers('player_actions', { start: 22, end: 23 }),
+            frameRate: 8,
+            repeat: 0
+        });
     }
 
     private createChickenAnimations(): void {
@@ -1683,6 +1712,8 @@ export class FarmScene extends Scene {
 
         this.spaceKey.on('down', () => this.tryStartChat());
         this.cutKey.on('down', () => this.tryCutTree());
+        this.waterKey = this.input.keyboard!.addKey('T');
+        this.waterKey.on('down', () => this.tryWater());
 
         // Listen for keyboard input for chat
         this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
@@ -1765,6 +1796,12 @@ export class FarmScene extends Scene {
 
         // Don't move if cutting
         if (this.isCutting) {
+            this.player.setVelocity(0, 0);
+            return;
+        }
+
+        // Don't move if watering
+        if (this.isWatering) {
             this.player.setVelocity(0, 0);
             return;
         }
@@ -2100,6 +2137,30 @@ export class FarmScene extends Scene {
         if (nearestTree) {
             this.cutTree(nearestTree);
         }
+    }
+
+    private tryWater(): void {
+        if (this.isWatering || this.isChatting || this.isCutting || this.isAttacking) return;
+
+        // Perform watering action
+        this.waterPlant();
+    }
+
+    private waterPlant(): void {
+        this.isWatering = true;
+        this.player.setVelocity(0, 0);
+
+        // Switch to player_actions texture and play watering animation
+        this.player.setTexture('player_actions', 0);
+        const waterAnim = `water-${this.currentDirection}`;
+        this.player.play(waterAnim, false);
+
+        // Listen for animation complete
+        this.player.once('animationcomplete', () => {
+            this.isWatering = false;
+            this.player.setTexture('player', 0);
+            this.player.play(`idle-${this.currentDirection}`, true);
+        });
     }
 
     private findNearestTree(): { x: number; y: number; direction: string; tile: Phaser.Tilemaps.Tile; layer: Phaser.Tilemaps.TilemapLayer } | null {
