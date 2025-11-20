@@ -71,6 +71,16 @@ export class UIScene extends Phaser.Scene {
     private marketplaceCreated: boolean = false;
     private selectedMarketplaceSlot: number = -1;
 
+    // Crafting UI properties
+    private craftingContainer!: Phaser.GameObjects.Container;
+    private craftingSlots: Slot[] = [];
+    private craftingResultSlot: Slot | null = null;
+    private craftingVisible: boolean = false;
+    private craftingKey!: Phaser.Input.Keyboard.Key;
+    private craftingArrow?: Phaser.GameObjects.Triangle;
+    private craftingResultAvailable: boolean = false;
+    private readonly craftingPrimaryResultKeys: string[] = ['gem_01j','crystal_01j','gem_01i','crystal_01i'];
+
     // Guide menu properties
     private guideMenuVisible: boolean = false;
     private guideMenuContainer?: Phaser.GameObjects.Container;
@@ -186,6 +196,9 @@ export class UIScene extends Phaser.Scene {
 
         // Create settings button at top right
         this.createSettingsButton();
+
+        // Create crafting UI (hidden by default)
+        this.createCraftingUI();
     }
 
     public showUI(): void {
@@ -494,17 +507,35 @@ export class UIScene extends Phaser.Scene {
             }
         });
 
-        // Add 'ESC' key to close marketplace/backpack
+        // Add 'ESC' key to close marketplace/backpack/crafting
         const escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
         escKey.on('down', () => {
+            if (this.craftingVisible) {
+                this.hideCrafting();
+            }
             if (this.backpackVisible) {
                 this.hideBackpack();
-                // If marketplace was open before, show it back
                 if (this.marketplaceVisible) {
                     this.marketplaceContainer.setVisible(true);
                 }
             } else if (this.marketplaceVisible) {
                 this.hideMarketplace();
+            }
+        });
+
+        // Add 'C' key to toggle crafting (always shows backpack with it)
+        this.craftingKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+        this.craftingKey.on('down', () => {
+            const farmScene = this.scene.get(SCENE_KEYS.FARM);
+            if (farmScene && farmScene.scene.isActive()) {
+                if (this.craftingVisible) {
+                    this.hideCrafting();
+                    // Leave backpack visibility as-is
+                } else {
+                    // Ensure backpack is visible alongside crafting
+                    if (!this.backpackVisible) this.showBackpack();
+                    this.showCrafting();
+                }
             }
         });
     }
@@ -1148,6 +1179,299 @@ export class UIScene extends Phaser.Scene {
         }
     }
 
+    // ===== CRAFTING METHODS =====
+
+    private createCraftingUI(): void {
+        // Container to hold crafting UI
+        this.craftingContainer = this.add.container(0, 0);
+        this.craftingContainer.setScrollFactor(0);
+        this.craftingContainer.setDepth(16000); // Above backpack background, below item bar
+        this.craftingContainer.setVisible(false);
+
+        // Position: to the left side of the backpack UI
+        const gap = 60; // move farther left from backpack
+        const backpackCenterX = this.cameras.main.centerX;
+        const backpackCenterY = this.cameras.main.centerY;
+
+        // Determine approximate backpack width based on scale used (backpackScale=2 with base ~256x?)
+        // We position crafting UI by absolute coordinates relative to backpack center
+        const gridSlotSize = 48; // Use same visual slot size as slot.png default
+        const gridScale = 1.2; // Slightly enlarge crafting UI
+        const scaledSlot = gridSlotSize * gridScale;
+        const gridCols = 3;
+        const gridRows = 3;
+        const gridWidth = gridCols * scaledSlot;
+        const gridHeight = gridRows * scaledSlot;
+
+        // Left of backpack: offset X negative
+        const craftingCenterX = backpackCenterX - (420 /*shift more left*/ + gap);
+        const craftingCenterY = backpackCenterY;
+
+        // Create 3x3 crafting grid
+        this.craftingSlots = [];
+        const startX = craftingCenterX - gridWidth / 2 + scaledSlot / 2;
+        const startY = craftingCenterY - gridHeight / 2 + scaledSlot / 2;
+
+        for (let r = 0; r < gridRows; r++) {
+            for (let c = 0; c < gridCols; c++) {
+                const x = startX + c * scaledSlot;
+                const y = startY + r * scaledSlot;
+                const slotBg = this.add.image(x, y, 'slot').setOrigin(0.5).setScale(gridScale).setDepth(200);
+                this.craftingContainer.add(slotBg);
+                const slot: Slot = { bg: slotBg, x, y };
+                this.craftingSlots.push(slot);
+                // Make interactive with custom crafting handlers
+                slotBg.setInteractive();
+                slotBg.on('pointerover', () => {
+                    this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+                });
+                slotBg.on('pointerout', () => {
+                    this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+                });
+                slotBg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+                    const index = r * gridCols + c;
+                    this.handleCraftingSlotPointerDown(index, pointer);
+                });
+            }
+        }
+
+        // Create result slot to the right of grid
+        const resultX = startX + gridWidth + scaledSlot * 0.8; // slight spacing
+        const resultY = craftingCenterY;
+        const resultBg = this.add.image(resultX, resultY, 'slot').setOrigin(0.5).setScale(gridScale).setDepth(220);
+        this.craftingContainer.add(resultBg);
+        this.craftingResultSlot = { bg: resultBg, x: resultX, y: resultY };
+        resultBg.setInteractive();
+        resultBg.on('pointerover', () => {
+            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
+        });
+        resultBg.on('pointerout', () => {
+            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
+        });
+        resultBg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+            if (!this.craftingResultSlot) return;
+            // Pick up crafted result and consume grid
+            if (pointer.leftButtonDown() && this.craftingResultSlot.itemId && !this.heldItem) {
+                const count = this.craftingResultSlot.countText ? parseInt(this.craftingResultSlot.countText.text) : 1;
+                this.heldItem = { itemId: this.craftingResultSlot.itemId, itemType: this.craftingResultSlot.itemType, count };
+                this.createHeldItemGhost();
+
+                // Consume crafting grid contents
+                this.consumeCraftingGrid();
+
+                // Clear result slot visuals/state
+                if (this.craftingResultSlot.itemImage) { this.craftingResultSlot.itemImage.destroy(); this.craftingResultSlot.itemImage = undefined; }
+                if (this.craftingResultSlot.countText) { this.craftingResultSlot.countText.destroy(); this.craftingResultSlot.countText = undefined; }
+                this.craftingResultSlot.itemId = undefined;
+                this.craftingResultSlot.itemType = undefined;
+                this.craftingResultAvailable = false;
+            }
+        });
+
+        // Add right-facing arrow between grid and result (offset slightly down-left)
+        const arrowX = startX + gridWidth + scaledSlot * 0.20; // left a bit
+        const arrowY = craftingCenterY + 12; // down a bit
+        // Triangle points forming a right arrow head
+        this.craftingArrow = this.add.triangle(arrowX, arrowY, -14, -10, -14, 10, 14, 0, 0xFFFFFF, 0.8).setDepth(215);
+        this.craftingContainer.add(this.craftingArrow);
+
+        // Add container to HUD
+        this.#hudContainer.add(this.craftingContainer);
+    }
+
+    public showCrafting(): void {
+        this.craftingVisible = true;
+        this.craftingContainer.setVisible(true);
+        this.updateCraftingResult();
+    }
+
+    // Compute whether plus-shape pattern is filled and update the result slot
+    private updateCraftingResult(): void {
+        if (!this.craftingResultSlot) return;
+        const indices = [1, 3, 4, 5, 7]; // top, left, middle, right, bottom
+        const hasPattern = indices.every(i => {
+            const s = this.craftingSlots[i];
+            return s && !!s.itemId;
+        });
+
+        if (!hasPattern) {
+            // Clear result if previously available
+            this.clearCraftingResult();
+            return;
+        }
+
+        const resultKey = this.resolveCraftedItemKey();
+        if (!resultKey) {
+            this.clearCraftingResult();
+            return;
+        }
+
+        // If already showing same result, do nothing
+        if (this.craftingResultSlot.itemId === resultKey && this.craftingResultAvailable) return;
+
+        // Set result visuals
+        this.setCraftingResult(resultKey);
+        this.craftingResultAvailable = true;
+    }
+
+    private resolveCraftedItemKey(): string | null {
+        // Prefer high-tier misc items with i/j suffix, fallback to any known present texture from list
+        for (const key of this.craftingPrimaryResultKeys) {
+            if (this.textures.exists(key)) return key;
+        }
+        // Fallbacks (still try to avoid marketplace but ensure it renders)
+        const fallbacks = ['gem_01b', 'crystal_01b', 'pearl_01b', 'ring_01b'];
+        for (const key of fallbacks) {
+            if (this.textures.exists(key)) return key;
+        }
+        return null;
+    }
+
+    private setCraftingResult(textureKey: string): void {
+        const slot = this.craftingResultSlot!;
+        // Clear old
+        if (slot.itemImage) { slot.itemImage.destroy(); slot.itemImage = undefined; }
+        if (slot.countText) { slot.countText.destroy(); slot.countText = undefined; }
+        // Draw new
+        if (this.textures.exists(textureKey)) {
+            slot.itemImage = this.add.image(slot.x, slot.y, textureKey)
+                .setDisplaySize(32, 32)
+                .setOrigin(0.5, 0.5)
+                .setDepth(230);
+            this.craftingContainer.add(slot.itemImage);
+            slot.itemId = textureKey;
+            slot.itemType = 'crafted';
+        }
+    }
+
+    private clearCraftingResult(): void {
+        if (!this.craftingResultSlot) return;
+        if (this.craftingResultSlot.itemImage) { this.craftingResultSlot.itemImage.destroy(); this.craftingResultSlot.itemImage = undefined; }
+        if (this.craftingResultSlot.countText) { this.craftingResultSlot.countText.destroy(); this.craftingResultSlot.countText = undefined; }
+        this.craftingResultSlot.itemId = undefined;
+        this.craftingResultSlot.itemType = undefined;
+        this.craftingResultAvailable = false;
+    }
+
+    private consumeCraftingGrid(): void {
+        // Remove all items from crafting grid
+        for (const s of this.craftingSlots) {
+            if (s.itemImage) { s.itemImage.destroy(); s.itemImage = undefined; }
+            if (s.countText) { s.countText.destroy(); s.countText = undefined; }
+            s.itemId = undefined;
+            s.itemType = undefined;
+        }
+    }
+
+    // Handle interactions specifically for crafting grid slots
+    private handleCraftingSlotPointerDown(index: number, pointer: Phaser.Input.Pointer): void {
+        const slot = this.craftingSlots[index];
+        if (!slot) return;
+
+        // Left click behaviors similar to backpack
+        if (pointer.leftButtonDown()) {
+            // Pick up if empty hand and slot has items
+            if (!this.heldItem && slot.itemId) {
+                const count = slot.countText ? parseInt(slot.countText.text) : 1;
+                // Create held item
+                this.heldItem = { itemId: slot.itemId, itemType: slot.itemType, count };
+                this.createHeldItemGhost();
+                // Clear slot visuals
+                if (slot.itemImage) { slot.itemImage.destroy(); slot.itemImage = undefined; }
+                if (slot.countText) { slot.countText.destroy(); slot.countText = undefined; }
+                slot.itemId = undefined; slot.itemType = undefined;
+            }
+            // Place held stack into empty crafting slot
+            else if (this.heldItem && !slot.itemId) {
+                const placeCount = this.heldItem.count; // place all into crafting
+                // Add item image
+                if (this.textures.exists(this.heldItem.itemId)) {
+                    slot.itemImage = this.add.image(slot.x, slot.y, this.heldItem.itemId)
+                        .setDisplaySize(32, 32)
+                        .setOrigin(0.5, 0.5)
+                        .setDepth(1000 + index);
+                    this.craftingContainer.add(slot.itemImage);
+                }
+                if (placeCount > 1) {
+                    slot.countText = this.add.text(slot.x + 18, slot.y + 18, placeCount.toString(), {
+                        fontSize: '16px', color: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3, padding: { x: 2, y: 1 }
+                    }).setOrigin(1, 1).setDepth(10000 + index);
+                    this.craftingContainer.add(slot.countText);
+                }
+                slot.itemId = this.heldItem.itemId;
+                slot.itemType = this.heldItem.itemType;
+                this.clearHeldItem();
+            }
+            // Swap if both have items
+            else if (this.heldItem && slot.itemId) {
+                const temp = { itemId: slot.itemId, itemType: slot.itemType, count: slot.countText ? parseInt(slot.countText.text) : 1 };
+                // Put held into slot
+                if (this.textures.exists(this.heldItem.itemId)) {
+                    if (slot.itemImage) slot.itemImage.destroy();
+                    if (slot.countText) { slot.countText.destroy(); slot.countText = undefined; }
+                    slot.itemImage = this.add.image(slot.x, slot.y, this.heldItem.itemId).setDisplaySize(32, 32).setOrigin(0.5, 0.5).setDepth(1000 + index);
+                    this.craftingContainer.add(slot.itemImage);
+                    if (this.heldItem.count > 1) {
+                        slot.countText = this.add.text(slot.x + 18, slot.y + 18, this.heldItem.count.toString(), { fontSize: '16px', color: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3, padding: { x: 2, y: 1 } }).setOrigin(1, 1).setDepth(10000 + index);
+                        this.craftingContainer.add(slot.countText);
+                    }
+                }
+                slot.itemId = this.heldItem.itemId;
+                slot.itemType = this.heldItem.itemType;
+                // Pick up previous slot item
+                this.heldItem = temp;
+                this.updateHeldItemGhost();
+            }
+        }
+        // Right click: place 1 item
+        else if (pointer.rightButtonDown()) {
+            if (this.heldItem) {
+                if (!slot.itemId) {
+                    // Place 1
+                    if (this.textures.exists(this.heldItem.itemId)) {
+                        slot.itemImage = this.add.image(slot.x, slot.y, this.heldItem.itemId).setDisplaySize(32, 32).setOrigin(0.5, 0.5).setDepth(1000 + index);
+                        this.craftingContainer.add(slot.itemImage);
+                    }
+                    slot.itemId = this.heldItem.itemId;
+                    slot.itemType = this.heldItem.itemType;
+                    if (1 > 1) {/* no count text for 1 by default */}
+                    this.heldItem.count -= 1;
+                    if (this.heldItem.count <= 0) this.clearHeldItem(); else this.updateHeldItemGhost();
+                } else if (slot.itemId === this.heldItem.itemId) {
+                    // Increment count on slot if same item
+                    const current = slot.countText ? parseInt(slot.countText.text) : 1;
+                    const newCount = Math.min(this.MAX_STACK_SIZE, current + 1);
+                    if (newCount !== current) {
+                        if (newCount > 1) {
+                            if (slot.countText) slot.countText.setText(newCount.toString());
+                            else {
+                                slot.countText = this.add.text(slot.x + 18, slot.y + 18, newCount.toString(), { fontSize: '16px', color: '#ffffff', fontStyle: 'bold', stroke: '#000000', strokeThickness: 3, padding: { x: 2, y: 1 } }).setOrigin(1, 1).setDepth(10000 + index);
+                                this.craftingContainer.add(slot.countText);
+                            }
+                            this.heldItem.count -= 1;
+                            if (this.heldItem.count <= 0) this.clearHeldItem(); else this.updateHeldItemGhost();
+                        }
+                    }
+                }
+            }
+        }
+        // Recompute crafting result after any change
+        this.updateCraftingResult();
+    }
+
+    public hideCrafting(): void {
+        this.craftingVisible = false;
+        this.craftingContainer.setVisible(false);
+        // Clear crafted result visual if any
+        if (this.craftingResultSlot && this.craftingResultSlot.itemImage) {
+            this.craftingResultSlot.itemImage.destroy();
+            this.craftingResultSlot.itemImage = undefined;
+        }
+        // Do not clear grid items here to preserve user layout when toggling off/on
+    }
+
+    public isCraftingOpen(): boolean { return this.craftingVisible; }
+
     // ===== MARKETPLACE METHODS =====
 
     private createMarketplace(): void {
@@ -1661,9 +1985,17 @@ export class UIScene extends Phaser.Scene {
         const screenCenterY = this.cameras.main.height / 2;
 
         // Create semi-transparent overlay (non-interactive so dragging works)
-        this.npcTradeOverlay = this.add.rectangle(screenCenterX, screenCenterY, this.cameras.main.width, this.cameras.main.height, 0x000000, 0.5);
+        this.npcTradeOverlay = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            this.cameras.main.width * 2,
+            this.cameras.main.height * 2,
+            0x000000,
+            0.5
+        );
+        this.npcTradeOverlay.setOrigin(0.5);
         this.npcTradeOverlay.setScrollFactor(0);
-        this.npcTradeOverlay.setDepth(27000); // Lower depth so backpack can be interacted with
+        this.npcTradeOverlay.setDepth(50); // Behind HUD/UI so backpack and itembar appear above
         this.npcTradeOverlay.setVisible(false);
         // No setInteractive() so it doesn't block clicks/drags
 
