@@ -589,6 +589,15 @@ export class UIScene extends Phaser.Scene {
                 }
             } else if (this.marketplaceVisible) {
                 this.hideMarketplace();
+            } else if (this.guideMenuVisible) {
+                this.hideGuideMenu();
+            } else if (this.settingsMenuVisible) {
+                this.hideSettingsMenu();
+            } else if (this.npcTradeVisible) {
+                this.hideNPCTrade();
+            } else {
+                // No menus open - show exit confirmation
+                this.showExitConfirmation();
             }
         });
     }
@@ -1593,11 +1602,9 @@ export class UIScene extends Phaser.Scene {
     }
 
     private createMarketplaceButtons(marketplaceScale: number): void {
-        // Main marketplace tabs
+        // Main marketplace tabs - only Browse
         const tabs = [
-            { name: 'Browse', type: 'browse', x: 50, y: 1, width: 80, height: 32 },
-            { name: 'My Kiosk', type: 'my_kiosk', x: 140, y: 1, width: 90, height: 32 },
-            { name: 'Sell', type: 'sell', x: 240, y: 1, width: 60, height: 32 }
+            { name: 'Browse', type: 'browse', x: 50, y: 1, width: 80, height: 32 }
         ];
 
         // Item category filters for Browse tab
@@ -1614,49 +1621,7 @@ export class UIScene extends Phaser.Scene {
         const frameWidth = this.marketplaceBg.width * marketplaceScale;
         const frameHeight = this.marketplaceBg.height * marketplaceScale;
 
-        // Create tab buttons
-        tabs.forEach((tab, index) => {
-            const absoluteX = frameCenterX - (frameWidth / 2) + (tab.x * marketplaceScale) + (tab.width * marketplaceScale / 2);
-            const absoluteY = frameCenterY - (frameHeight / 2) + (tab.y * marketplaceScale) + (tab.height * marketplaceScale / 2);
-
-            // Create tab button text (since we don't have custom tab images)
-            const buttonBg = this.add.rectangle(absoluteX, absoluteY, tab.width * marketplaceScale, tab.height * marketplaceScale, 0x2a2a2a);
-            buttonBg.setStrokeStyle(2, this.currentMarketplaceTab === tab.type ? 0x3b82f6 : 0x4a4a4a);
-            buttonBg.setOrigin(0.5);
-            buttonBg.setInteractive({ useHandCursor: true });
-            buttonBg.setDepth(200);
-
-            const buttonText = this.add.text(absoluteX, absoluteY, tab.name, {
-                fontSize: '14px',
-                color: this.currentMarketplaceTab === tab.type ? '#ffffff' : '#9ca3af',
-                fontStyle: 'bold'
-            });
-            buttonText.setOrigin(0.5);
-            buttonText.setDepth(201);
-
-            // Click handler
-            buttonBg.on('pointerdown', () => this.selectMarketplaceTab(tab.type as any));
-
-            // Hover effects
-            buttonBg.on('pointerover', () => {
-                if (this.currentMarketplaceTab !== tab.type) {
-                    buttonBg.setStrokeStyle(2, 0x6b7280);
-                }
-                this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-            });
-            buttonBg.on('pointerout', () => {
-                if (this.currentMarketplaceTab !== tab.type) {
-                    buttonBg.setStrokeStyle(2, 0x4a4a4a);
-                }
-                this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-            });
-
-            this.marketplaceContainer.add(buttonBg);
-            this.marketplaceContainer.add(buttonText);
-
-            // Store tab elements
-            this.marketplaceContainer.setData(`tab_${tab.type}`, { bg: buttonBg, text: buttonText });
-        });
+        // No tab buttons needed - only one tab
 
         // Create category filter buttons (only visible in Browse tab)
         if (this.currentMarketplaceTab === 'browse') {
@@ -1702,35 +1667,8 @@ export class UIScene extends Phaser.Scene {
     }
 
     private selectMarketplaceTab(tab: 'browse' | 'my_kiosk' | 'sell'): void {
-        if (this.isProcessingTransaction) return;
-
-        this.currentMarketplaceTab = tab;
-
-        // Update tab button appearances
-        ['browse', 'my_kiosk', 'sell'].forEach(tabType => {
-            const tabElements = this.marketplaceContainer.getData(`tab_${tabType}`);
-            if (tabElements) {
-                const isSelected = tabType === tab;
-                tabElements.bg.setStrokeStyle(2, isSelected ? 0x3b82f6 : 0x4a4a4a);
-                tabElements.text.setColor(isSelected ? '#ffffff' : '#9ca3af');
-            }
-        });
-
-        // Clear current marketplace slots
-        this.clearMarketplaceSlots();
-
-        // Load content based on selected tab
-        switch (tab) {
-            case 'browse':
-                this.loadMarketplaceItems(this.selectedCategory);
-                break;
-            case 'my_kiosk':
-                this.loadPlayerKiosk();
-                break;
-            case 'sell':
-                this.loadSellInterface();
-                break;
-        }
+        // Only browse tab exists now
+        this.loadMarketplaceItems(this.selectedCategory);
     }
 
     private async initializeNPCItems(): Promise<void> {
@@ -2097,89 +2035,39 @@ export class UIScene extends Phaser.Scene {
             slot.itemType = undefined;
         });
 
-        try {
-            // Load real blockchain marketplace data
-            // Convert string category to ItemType
-            const categoryMap: { [key: string]: number } = {
-                'weapons': ITEM_TYPES.WEAPON,
-                'armor': ITEM_TYPES.ARMOR,
-                'consumables': ITEM_TYPES.CONSUMABLE,
-                'misc': ITEM_TYPES.RESOURCE
-            };
-            const itemType = (categoryMap[category.toLowerCase()] || ITEM_TYPES.CONSUMABLE) as ItemType;
-            const listings = await this.oneChainMarketplaceService.fetchMarketplaceItems(itemType);
+        // Get items for selected category from fallback marketplace items
+        const categoryItems = this.FALLBACK_MARKETPLACE_ITEMS[category] || [];
+        
+        // Fill all 30 marketplace slots with items from the category
+        for (let i = 0; i < this.MARKETPLACE_SLOT_COUNT && i < categoryItems.length; i++) {
+            const itemId = categoryItems[i];
+            const slot = this.marketplaceSlots[i];
+            if (!slot) continue;
 
-            // Store listings for purchase functionality
-            this.marketplaceListings = listings;
+            if (this.textures.exists(itemId)) {
+                slot.itemImage = this.add.image(slot.x, slot.y, itemId)
+                    .setDisplaySize(32, 32)
+                    .setOrigin(0.5, 0.5)
+                    .setDepth(250);
+                this.marketplaceContainer.add(slot.itemImage);
 
-            // Populate slots with real blockchain items
-            listings.forEach((listing, index) => {
-                if (index >= this.MARKETPLACE_SLOT_COUNT) return;
+                slot.itemId = itemId;
+                slot.itemType = category.toLowerCase();
 
-                const slot = this.marketplaceSlots[index];
-                if (!slot) return;
-
-                // Add item image
-                const itemSpriteKey = listing.item?.sprite_key || 'default-item';
-                if (this.textures.exists(itemSpriteKey)) {
-                    slot.itemImage = this.add.image(slot.x, slot.y, itemSpriteKey)
-                        .setDisplaySize(32, 32)
-                        .setOrigin(0.5, 0.5)
-                        .setDepth(250);
-                    this.marketplaceContainer.add(slot.itemImage);
-
-                    slot.itemId = listing.id || `item_${index}`;
-                    slot.itemType = category.toLowerCase();
-
-                    // Add price text
-                    const priceText = this.add.text(slot.x, slot.y + 20, `${listing.price.toLocaleString()} ◈`, {
-                        fontSize: '10px',
-                        color: '#10b981',
-                        align: 'center'
-                    });
-                    priceText.setOrigin(0.5);
-                    priceText.setScrollFactor(0);
-                    priceText.setDepth(260);
-                    this.marketplaceContainer.add(priceText);
-                    slot.countText = priceText;
-
-                    // Add rarity border
-                    const rarityColor = getRarityColor(listing.item.rarity);
-                    const rarityBorder = this.add.rectangle(slot.x, slot.y, 36, 36, 0x000000, 0);
-                    rarityBorder.setStrokeStyle(2, parseInt(rarityColor.replace('#', '0x')));
-                    rarityBorder.setScrollFactor(0);
-                    rarityBorder.setDepth(249);
-                    this.marketplaceContainer.add(rarityBorder);
-                }
-            });
-
-        } catch (error) {
-            console.error('Failed to load marketplace items:', error);
-
-            // Fallback to items if blockchain fails
-            const items = this.FALLBACK_MARKETPLACE_ITEMS[category as keyof typeof this.FALLBACK_MARKETPLACE_ITEMS] || [];
-
-            // Populate slots with mock items (max 30)
-            items.forEach((itemId, index) => {
-                if (index >= this.MARKETPLACE_SLOT_COUNT) return;
-
-                const slot = this.marketplaceSlots[index];
-                if (!slot) return;
-
-                // Add item image
-                if (this.textures.exists(itemId)) {
-                    slot.itemImage = this.add.image(slot.x, slot.y, itemId)
-                        .setDisplaySize(32, 32)
-                        .setOrigin(0.5, 0.5)
-                        .setDepth(250);
-                    this.marketplaceContainer.add(slot.itemImage);
-
-                    slot.itemId = itemId;
-                    slot.itemType = category.toLowerCase();
-                }
-            });
-        }  // Close catch block
-    }  // Close function
+                const price = Math.floor(Math.random() * 500) + 100;
+                const priceText = this.add.text(slot.x, slot.y + 20, `${price} ◈`, {
+                    fontSize: '10px',
+                    color: '#10b981',
+                    align: 'center'
+                });
+                priceText.setOrigin(0.5);
+                priceText.setScrollFactor(0);
+                priceText.setDepth(260);
+                this.marketplaceContainer.add(priceText);
+                slot.countText = priceText;
+            }
+        }
+    }
 
     private selectMarketplaceSlot(slotIndex: number): void {
         const slot = this.marketplaceSlots[slotIndex];
@@ -2200,55 +2088,37 @@ export class UIScene extends Phaser.Scene {
 
     private async handleBuyItem(): Promise<void> {
         if (this.selectedMarketplaceSlot === -1) return;
-        if (this.isProcessingTransaction) return;
 
         const slot = this.marketplaceSlots[this.selectedMarketplaceSlot];
         if (!slot || !slot.itemId) return;
 
-        try {
-            this.isProcessingTransaction = true;
-            this.showTransactionProgress('Purchasing item...');
+        // Simple purchase - add to backpack
+        const itemId = slot.itemId;
+        const itemType = slot.itemType || 'item';
 
-            // Execute real blockchain purchase
-            const result = await this.oneChainMarketplaceService.purchaseItem(slot.itemId);
-
-            if (result.success) {
-                this.showTransactionSuccess('Item purchased successfully!');
-                this.addMarketplaceItemToInventory(slot.itemId, slot.itemType || 'item');
-
-                // Remove item from marketplace display
-                if (slot.itemImage) {
-                    slot.itemImage.destroy();
-                    slot.itemImage = undefined;
-                }
-                if (slot.countText) {
-                    slot.countText.destroy();
-                    slot.countText = undefined;
-                }
-                slot.itemId = undefined;
-                slot.itemType = undefined;
-
-                this.selectedMarketplaceSlot = -1;
-
-                // Create transaction details for display
-                this.createMarketplaceTransaction(slot.itemId || 'unknown', slot.itemType ?? 'item', result.transactionHash ?? '');
-
-                // Show transaction details modal automatically after successful purchase
-                if (this.currentTransaction && result.transactionHash) {
-                    this.time.delayedCall(1000, () => {
-                        this.showTransactionDetailsModal();
-                    });
-                }
-            } else {
-                this.showTransactionError(result.error || 'Purchase failed');
+        // Find first empty backpack slot
+        for (let i = 0; i < this.BACKPACK_SLOT_COUNT; i++) {
+            const backpackSlot = this.backpackSlots[i];
+            if (!backpackSlot.itemId) {
+                this.addItemToBackpack(itemId, i, itemType, 1);
+                break;
             }
-        } catch (error) {
-            console.error('Purchase error:', error);
-            this.showTransactionError('Transaction failed');
-        } finally {
-            this.isProcessingTransaction = false;
-            this.hideTransactionProgress();
         }
+
+        // Remove item from marketplace display
+        if (slot.itemImage) {
+            slot.itemImage.destroy();
+            slot.itemImage = undefined;
+        }
+        if (slot.countText) {
+            slot.countText.destroy();
+            slot.countText = undefined;
+        }
+        slot.itemId = undefined;
+        slot.itemType = undefined;
+
+        this.selectedMarketplaceSlot = -1;
+        this.showTransactionSuccess('Item purchased!');
     }
 
     private createMarketplaceTransaction(itemId: string, itemType: string, realHash?: string): void {
@@ -4665,14 +4535,13 @@ export class UIScene extends Phaser.Scene {
                 this.npcHermanTick.setVisible(true);
             }
 
-            console.log('Trade locked!');
-        } else {
-            // If both sides are ready, execute blockchain trade
+            // Both accepted - show confirmation modal
             if (this.npcPlayerTick?.visible && this.npcHermanTick?.visible) {
-                await this.executeNPCTrade();
-                return;
+                this.showTradeConfirmationModal();
             }
 
+            console.log('Trade locked!');
+        } else {
             // Unlock all slots
             [...this.npcLeftSlots, ...this.npcRightSlots].forEach(slot => {
                 (slot.bg as Phaser.GameObjects.Image).clearTint();
@@ -5024,41 +4893,6 @@ export class UIScene extends Phaser.Scene {
         });
 
         this.#hudContainer.add(guideButton);
-
-        // Create exit button below guide button
-        const exitButton = this.add.image(
-            this.cameras.main.width - 50,
-            190,
-            'settings-button'
-        );
-        exitButton.setScrollFactor(0);
-        exitButton.setDepth(100);
-        exitButton.setScale(1.0);
-        exitButton.setInteractive();
-
-        exitButton.on('pointerover', () => {
-            exitButton.setScale(1.1);
-            this.input.setDefaultCursor('url(assets/ui/cursor-selection.png) 16 16, pointer');
-        });
-
-        exitButton.on('pointerout', () => {
-            exitButton.setScale(1.0);
-            this.input.setDefaultCursor('url(assets/ui/cursor-normal.png) 16 16, auto');
-        });
-
-        exitButton.on('pointerdown', () => {
-            this.showExitConfirmation();
-        });
-
-        this.#hudContainer.add(exitButton);
-
-        // Add keyboard shortcut for exit to menu (Ctrl+X)
-        this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
-            if (event.ctrlKey && event.key === 'x') {
-                event.preventDefault();
-                this.showExitConfirmation();
-            }
-        });
     }
 
     private toggleGuideMenu(): void {

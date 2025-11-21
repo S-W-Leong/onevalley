@@ -23,10 +23,21 @@
 "EXPLORE THE WORLD"
 ```
 **[TRANSITION TO FARM SELECTION]**
-- Show farm selection menu
-- Display "World" and "Friend" options
-- Browse different farms
-- Select and enter a farm
+
+### 🗺️ Farm Selection
+- View farm selection menu
+- Choose between "World" (public farms) and "Friend" (private farms)
+- Click on farm to preview
+- Click "Enter" to join selected farm
+
+### Movement Controls (Once in game):
+- **W / Arrow Up** - Move Up
+- **A / Arrow Left** - Move Left  
+- **S / Arrow Down** - Move Down
+- **D / Arrow Right** - Move Right
+- **Hold Shift** - Run (faster movement)
+- **Press ESC** - Close menus or exit to main menu
+
 - **Duration: 15 seconds**
 
 ---
@@ -37,11 +48,35 @@
 "GATHER RESOURCES"
 ```
 **[TRANSITION TO GAMEPLAY MONTAGE]**
-- **Cut trees** 🪓
-- **Plant seeds AND watering the plant to let it stim** 🌱
-- **Harvest crops** 🌾
-- **Hunt animals & defeat enemies** ⚔️
-- Show ingredients/items being collected
+
+### 🪓 Cut Trees
+- **Press R** to swing axe and cut trees
+- Trees drop wood resources
+- Wood used for crafting and building
+
+### 🌱 Plant & Water Crops
+- **Press E** near tilled soil to plant seeds
+- **Press T** to water plants with watering can
+- **One watering = One growth stage** (plant grows immediately)
+- Water multiple times to reach full maturity
+- Fully grown crops ready for harvest
+
+### 🌾 Harvest Crops
+- **Press H** near mature crops to harvest
+- **Press C** to collect dropped items
+- Collected items go to inventory (Press **B** to view)
+
+### ⚔️ Combat & Hunting
+- **Press Q** to attack enemies and animals
+- **Hold Q** for continuous attacks
+- Defeat enemies to collect loot and resources
+- **Hold Shift** while moving to run away or chase
+
+### 🎒 Inventory Management
+- **Press B** to open backpack/inventory
+- **Press 1-8** to quick-use hotbar items
+- Collected items stored automatically
+
 - **Duration: 30 seconds**
 
 ---
@@ -52,10 +87,20 @@
 "CRAFT POWERFUL ITEMS"
 ```
 **[TRANSITION TO WORKBENCH]**
-- Open crafting station (工作台)
-- Show ingredients combining
-- Craft items using collected resources
-- Display crafted items
+
+### 🔨 Crafting System
+- **Press F** to open crafting table/workbench
+- Browse available recipes
+- Select items to craft (requires ingredients)
+- Click "Craft" button to create items
+- Crafted items appear in inventory
+- Craft tools, weapons, and consumables
+
+### Example Crafting:
+- Wood + Stone = Axe
+- Crops + Water = Food
+- Resources = Upgraded tools
+
 - **Duration: 20 seconds**
 
 ---
@@ -66,9 +111,21 @@
 "TRADE YOUR ITEMS"
 ```
 **[TRANSITION TO TRADING UI]**
-- Show NPC trading interface
-- Demonstrate item exchange
-- Highlight escrow system
+
+### 🤝 Trading System
+- **Press E** near NPCs to initiate trade
+- **Press Space** to start chat/dialogue with NPCs
+- Select items from your inventory to offer
+- Choose items you want in return
+- Confirm trade through escrow system
+- Blockchain-secured transaction
+- Items exchanged safely
+
+### Escrow Protection:
+- Items locked during trade
+- Both parties must confirm
+- Automatic exchange on confirmation
+
 - **Duration: 20 seconds**
 
 ---
@@ -79,10 +136,25 @@
 "BUY & SELL IN THE MARKETPLACE"
 ```
 **[TRANSITION TO MARKETPLACE/KIOSK]**
-- Browse marketplace items
-- List items for sale
-- Purchase items from other players
-- Show kiosk interface
+
+### 🏪 Marketplace Kiosk
+- **Press E** near marketplace kiosk to open
+- Browse items listed by other players
+- View item details and prices
+- Click "Buy" to purchase items
+- List your own items for sale:
+  - Select item from inventory
+  - Set price in ONE tokens
+  - Confirm listing
+- All transactions on OneChain blockchain
+- True ownership of digital assets
+
+### Marketplace Features:
+- Real-time listings
+- Decentralized trading
+- NFT-based items
+- Secure blockchain transactions
+
 - **Duration: 25 seconds**
 
 ---

@@ -443,16 +443,15 @@ export class FarmScene extends Scene {
         this.time.delayedCall(1000, () => {
             const uiScene = this.scene.get(SCENE_KEYS.UI) as UIScene;
             if (uiScene) {
-                // Add test items to the item bar with counts
-                uiScene.addItem('potion_01a', 0, 'potion', 5);
-                uiScene.addItem('fish_01a', 1, 'food', 12);
-                uiScene.addItem('candy_01a', 2, 'candy', 25);
-                uiScene.addItem('helmet_01a', 3, 'helmet', 1);
-
-                // Add some empty slots with just numbers
-                for (let i = 4; i < 8; i++) {
-                    // These will show just the slot numbers
-                }
+                // Populate all 8 itembar slots with different items
+                uiScene.addItem('sword_01a', 0, 'weapon', 1);
+                uiScene.addItem('potion_01a', 1, 'consumable', 5);
+                uiScene.addItem('helmet_01a', 2, 'armor', 1);
+                uiScene.addItem('fish_01a', 3, 'consumable', 12);
+                uiScene.addItem('gem_01a', 4, 'misc', 3);
+                uiScene.addItem('bow_01a', 5, 'weapon', 1);
+                uiScene.addItem('candy_01a', 6, 'consumable', 25);
+                uiScene.addItem('shield_01a', 7, 'weapon', 1);
 
                 // Show the UI after adding items
                 uiScene.showUI();
@@ -2351,12 +2350,7 @@ export class FarmScene extends Scene {
         // Store sprite for this crop
         this.cropSprites.set(cropKey, [seedSprite]);
 
-        // Start growth timer for stage 1 (after 5 seconds)
-        const growthTimer1 = this.time.delayedCall(5000, () => {
-            this.growCarrot(cropKey, 1);
-        });
-
-        this.cropGrowthTimers.set(cropKey + '_stage1', growthTimer1);
+        // No automatic growth timers - growth only happens when watered
     }
 
     private growCarrot(cropKey: string, newStage: number): void {
@@ -2365,6 +2359,9 @@ export class FarmScene extends Scene {
 
         const existingSprites = this.cropSprites.get(cropKey);
         if (!existingSprites) return;
+
+        // Don't grow beyond stage 2 (mature)
+        if (newStage > 2) return;
 
         crop.growthStage = newStage;
 
@@ -2394,7 +2391,7 @@ export class FarmScene extends Scene {
 
         switch (newStage) {
             case 1:
-                // Growing stage (5 seconds): use carrot stage 2 sprite
+                // Growing stage: use carrot stage 2 sprite
                 const growingSprite = this.add.sprite(worldX, worldY, 'carrot_stage2');
                 growingSprite.setOrigin(0.5, 1); // Center bottom
                 growingSprite.setDepth(crop.y); // Same level as tiles
@@ -2403,16 +2400,10 @@ export class FarmScene extends Scene {
                 this.applyWindEffect(growingSprite, cropKey);
 
                 newSprites.push(growingSprite);
-
-                // Start timer for stage 2 (after another 5 seconds)
-                const growthTimer2 = this.time.delayedCall(5000, () => {
-                    this.growCarrot(cropKey, 2);
-                });
-                this.cropGrowthTimers.set(cropKey + '_stage2', growthTimer2);
                 break;
 
             case 2:
-                // Fully grown stage (10 seconds total): use carrot stage 3 sprite
+                // Fully grown stage: use carrot stage 3 sprite
                 const matureSprite = this.add.sprite(worldX, worldY, 'carrot_stage3');
                 matureSprite.setOrigin(0.5, 1); // Center bottom
                 matureSprite.setDepth(crop.y); // Same level as tiles
@@ -2617,11 +2608,25 @@ export class FarmScene extends Scene {
     private tryWater(): void {
         if (this.isWatering || this.isChatting || this.isCutting || this.isAttacking) return;
 
-        // Perform watering action
-        this.waterPlant();
+        // Find nearby crop to water
+        const playerTileX = Math.floor(this.player.x / 16);
+        const playerTileY = Math.floor(this.player.y / 16);
+        const radius = 2;
+
+        for (let y = playerTileY - radius; y <= playerTileY + radius; y++) {
+            for (let x = playerTileX - radius; x <= playerTileX + radius; x++) {
+                const cropKey = `${x},${y}`;
+                const crop = this.crops.get(cropKey);
+
+                if (crop && crop.growthStage < 2) {
+                    this.waterPlant(cropKey, crop);
+                    return;
+                }
+            }
+        }
     }
 
-    private waterPlant(): void {
+    private waterPlant(cropKey: string, crop: Crop): void {
         this.isWatering = true;
         this.player.setVelocity(0, 0);
 
@@ -2635,6 +2640,9 @@ export class FarmScene extends Scene {
             this.isWatering = false;
             this.player.setTexture('player', 0);
             this.player.play(`idle-${this.currentDirection}`, true);
+
+            // Grow the crop by one stage
+            this.growCarrot(cropKey, crop.growthStage + 1);
         });
     }
 
