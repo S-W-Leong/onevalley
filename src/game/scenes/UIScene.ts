@@ -574,6 +574,19 @@ export class UIScene extends Phaser.Scene {
             }
         });
 
+        // Add 'F' key to toggle crafting (only in FarmScene)
+        this.craftingKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F);
+        this.craftingKey.on('down', () => {
+            const farmScene = this.scene.get(SCENE_KEYS.FARM);
+            if (farmScene && farmScene.scene.isActive()) {
+                if (this.craftingVisible) {
+                    this.hideCrafting();
+                } else {
+                    this.showCrafting();
+                }
+            }
+        });
+
         // Add 'ESC' key to close marketplace/backpack/crafting
         const escKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
         escKey.on('down', () => {
