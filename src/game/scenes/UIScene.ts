@@ -4972,14 +4972,6 @@ Double Click - Group same items
 • Right Click: Pick half / Place 1 item
 • Double Click: Auto-group same items
 
-🏪 MARKETPLACE
-1. Walk near marketplace building
-2. Click floating icon to open
-3. Select category (Weapons/Armors/Misc/Consumables)
-4. Click item to select (slot turns green)
-5. Click BUY button to purchase
-6. Items stack automatically in item bar
-
 💡 TIPS
 • Stack items to save space
 • Use F to craft items from resources
