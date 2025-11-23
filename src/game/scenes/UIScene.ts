@@ -1981,15 +1981,14 @@ export class UIScene extends Phaser.Scene {
         sellButton.setOrigin(0, 0.5);
         sellButton.setDepth(26000); // Above item bar
         sellButton.setScrollFactor(0);
-        sellButton.setInteractive({ useHandCursor: true });
+        sellButton.setInteractive({ useHandCursor: true, dropZone: true });
         sellButton.setVisible(false); // Hidden by default, show when marketplace opens
         
         // Update position dynamically
         this.updateSellButtonPosition(sellButton);
 
         sellButton.on('pointerdown', () => {
-            console.log('Sell button clicked');
-            // TODO: Implement sell logic
+            this.handleSellButtonClick();
         });
 
         sellButton.on('pointerover', () => {
@@ -2006,6 +2005,32 @@ export class UIScene extends Phaser.Scene {
         
         // Store reference for show/hide
         this.marketplaceContainer.setData('sellButton', sellButton);
+    }
+
+    private handleSellButtonClick(): void {
+        // Check if player is holding an item
+        if (!this.heldItem) {
+            console.log('No item to sell');
+            this.showTransactionError('Please hold an item to sell');
+            return;
+        }
+
+        // Get item details
+        const itemId = this.heldItem.itemId;
+        const itemType = this.heldItem.itemType || 'item';
+        const itemCount = this.heldItem.count;
+
+        // Calculate sell price (lower than buy price)
+        const sellPrice = this.getMarketplaceItemPrice(itemId, itemType) * 0.7; // 70% of buy price
+        const totalPrice = Math.floor(sellPrice * itemCount);
+
+        console.log(`Selling ${itemCount}x ${itemId} for ${totalPrice} coins`);
+
+        // Clear the held item (this removes it from inventory)
+        this.clearHeldItem();
+
+        // Show success message
+        this.showTransactionSuccess(`Sold ${itemCount}x ${this.getItemDisplayName(itemId)} for ${totalPrice} coins!`);
     }
 
     private updateSellButtonPosition(sellButton: Phaser.GameObjects.Image): void {
